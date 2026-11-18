@@ -28,6 +28,15 @@ interface ClientReminderDao {
     @Query("SELECT * FROM Clients ORDER BY clientName ASC")
     fun getAllClients(): Flow<List<ClientEntity>>
 
+    @Query("SELECT * FROM Clients ORDER BY clientName ASC")
+    suspend fun getAllClientsList(): List<ClientEntity>
+
+    @Query("SELECT * FROM ClientReminders")
+    suspend fun getAllRemindersList(): List<ClientReminderEntity>
+
+    @Query("SELECT * FROM ClientReminders WHERE (clientName = :clientName OR telephone = :telephone) AND reminderType = :type AND dueDate LIKE :yearMonthPattern LIMIT 1")
+    suspend fun getReminderByClientTypeAndMonth(clientName: String, telephone: String, type: String, yearMonthPattern: String): ClientReminderEntity?
+
     @Query("SELECT * FROM Clients WHERE id = :id LIMIT 1")
     suspend fun getClientById(id: Int): ClientEntity?
 

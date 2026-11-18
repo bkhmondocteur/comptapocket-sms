@@ -1,8 +1,8 @@
 {
-  "versionCode": 2,
-  "versionName": "1.0.1",
+  "versionCode": 3,
+  "versionName": "1.0.2",
   "releaseDate": "2026-11-18",
-  "changelog": "- 🧪 Mode Test & Simulation de Date : possibilité de changer la date du jour pour tester toutes les catégories d'échéances (DM, CNSS, AP)\n- ⚡ Sauts temporels rapides (+1 jour, +1 mois, échéances 15/28, trimestres CNSS, acomptes AP)\n- 🔄 Réactivité dynamique du cycle mensuel selon la date simulée\n- 📥 Mise à jour directe depuis l'application",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.1/ComptaPocket-SMS.apk",
+  "changelog": "- 🔄 Génération automatique du cycle actif : En simulant n'importe quel mois (ex: 01/12/2026, 05/01/2027), les SMS en attente sont automatiquement préparés pour tous les clients (DM tous les mois, CNSS en Janvier/Avril/Juillet/Octobre, AP en Juin/Septembre/Décembre)\n- 🎯 Écran d'état du mois actif : Nettoyage automatique des SMS des mois passés\n- ⏳ Visibilité immédiate de la programmation du mois suivant dès qu'un SMS du mois en cours est envoyé\n- 📅 Boutons de dates CNSS et AP intelligents dans le sélecteur de test",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.2/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }

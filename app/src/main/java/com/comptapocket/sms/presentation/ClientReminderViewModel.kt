@@ -42,6 +42,11 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
     init {
         SimulationDateManager.init(application)
+        viewModelScope.launch {
+            SimulationDateManager.simulatedDateFlow.collect {
+                syncCycleForActiveDate()
+            }
+        }
     }
 
     // ==========================================
@@ -86,19 +91,29 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 }
             } catch (e: Exception) {}
 
-            // Règle 1 : Lorsque le nouveau mois commence, les SMS envoyés du mois précédent sont enlevés
+            // Règle 1 : Lorsque le nouveau mois commence, les SMS du mois précédent ne polluent pas le mois actif
             val isFromPastMonth = (itemYear < currentYear) || (itemYear == currentYear && itemMonth < currentMonth)
-            if (item.smsEnvoye && isFromPastMonth) {
+            if (isFromPastMonth) {
                 return@filter false
             }
 
             // Règle 2 : Cotisations CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur
-            val isFutureMonth = (itemYear > currentYear) || (itemYear == currentYear && itemMonth > currentMonth)
-            if (isFutureMonth && (item.reminderType == ReminderType.CNSS || item.reminderType == ReminderType.ACOMPTES_PROVISIONNELS)) {
+            if (item.reminderType == ReminderType.CNSS && currentMonth !in listOf(1, 4, 7, 10)) {
+                return@filter false
+            }
+            if (item.reminderType == ReminderType.ACOMPTES_PROVISIONNELS && currentMonth !in listOf(6, 9, 12)) {
                 return@filter false
             }
 
-            true
+            // Affichage focalisé sur le cycle du mois en cours
+            val isCurrentCycle = (itemYear == currentYear && itemMonth == currentMonth)
+
+            // Règle 3 : Dès l'envoi du SMS du mois en cours, la programmation pour le mois suivant s'affiche
+            val isNextMonth = (itemYear == currentYear && itemMonth == currentMonth + 1) ||
+                    (currentMonth == 12 && itemYear == currentYear + 1 && itemMonth == 1)
+            val isNextMonthDm = !item.smsEnvoye && item.reminderType == ReminderType.DECLARATION_MENSUELLE && isNextMonth
+
+            isCurrentCycle || isNextMonthDm
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -230,6 +245,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 notes = notes?.trim()?.takeIf { it.isNotBlank() }
             )
             dao.insertClient(newClient)
+            syncCycleForActiveDate()
         }
     }
 
@@ -616,6 +632,161 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     }
                 } else {
                     SyncService.scheduleExactAlarm(getApplication(), newId, itemSendDate, itemSendTime)
+                }
+            }
+            syncCycleForActiveDate()
+        }
+    }
+
+    // Synchroniser dynamiquement le cycle pour la date active (réelle ou simulée)
+    // Garantit que pour le mois actif, tous les clients ont leurs rappels DM préparés,
+    // ainsi que CNSS (si mois 1, 4, 7, 10) et AP (si mois 6, 9, 12).
+    fun syncCycleForActiveDate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = SimulationDateManager.getTodayCalendar()
+            val currentYear = now.get(Calendar.YEAR)
+            val currentMonth = now.get(Calendar.MONTH) + 1 // 1..12
+            val yearMonthPattern = String.format("%04d-%02d-%%", currentYear, currentMonth)
+
+            // 1. S'assurer que les clients enregistrés sont bien dans la table Clients
+            var clientsList = dao.getAllClientsList()
+            if (clientsList.isEmpty()) {
+                val allReminders = dao.getAllRemindersList()
+                val distinctClients = allReminders.distinctBy { it.telephone.trim() }
+                for (r in distinctClients) {
+                    if (r.clientName.isNotBlank() && r.telephone.isNotBlank()) {
+                        dao.insertClient(
+                            ClientEntity(
+                                clientName = r.clientName.trim(),
+                                category = r.category,
+                                telephone = r.telephone.trim(),
+                                email = r.email,
+                                taxId = r.taxId
+                            )
+                        )
+                    }
+                }
+                clientsList = dao.getAllClientsList()
+            }
+
+            if (clientsList.isEmpty()) return@launch
+
+            val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val defaultTime = getDefaultSendTime()
+            val daysBefore = prefs.getInt("default_days_before", 3)
+
+            val dueDayEntreprise = prefs.getInt("due_day_entreprise", 28)
+            val dueDayPhysique = prefs.getInt("due_day_physique", 15)
+            val cnssDueDay = prefs.getInt("cnss_due_day", 15)
+            val acomptesDayEntreprise = prefs.getInt("acomptes_day_entreprise", 28)
+            val acomptesDayPhysique = prefs.getInt("acomptes_day_physique", 25)
+
+            for (client in clientsList) {
+                val isEntreprise = client.category == ClientCategory.ENTREPRISE
+
+                // --- 1. DÉCLARATION MENSUELLE (DM) : Tous les mois ---
+                val dmDueDay = if (isEntreprise) dueDayEntreprise else dueDayPhysique
+                val dmCal = (now.clone() as Calendar).apply {
+                    val maxDay = getActualMaximum(Calendar.DAY_OF_MONTH)
+                    set(Calendar.DAY_OF_MONTH, minOf(dmDueDay, maxDay))
+                }
+                val dmDueDateStr = format.format(dmCal.time)
+                val dmSendCal = (dmCal.clone() as Calendar).apply {
+                    add(Calendar.DAY_OF_YEAR, -daysBefore)
+                }
+                val dmSendDateStr = format.format(dmSendCal.time)
+
+                val existingDm = dao.getReminderByClientTypeAndMonth(
+                    client.clientName, client.telephone, ReminderType.DECLARATION_MENSUELLE, yearMonthPattern
+                )
+                if (existingDm == null) {
+                    val text = generateSmsText(client.clientName, client.category, ReminderType.DECLARATION_MENSUELLE, dmDueDateStr)
+                    dao.insertReminder(
+                        ClientReminderEntity(
+                            clientName = client.clientName,
+                            category = client.category,
+                            telephone = client.telephone,
+                            email = client.email,
+                            taxId = client.taxId,
+                            reminderType = ReminderType.DECLARATION_MENSUELLE,
+                            dueDate = dmDueDateStr,
+                            sendDate = dmSendDateStr,
+                            sendTime = defaultTime,
+                            texteSms = text,
+                            smsEnvoye = false
+                        )
+                    )
+                }
+
+                // --- 2. COTISATIONS CNSS : Trimestrielle (Janvier=1, Avril=4, Juillet=7, Octobre=10) ---
+                if (currentMonth in listOf(1, 4, 7, 10)) {
+                    val cnssCal = (now.clone() as Calendar).apply {
+                        val maxDay = getActualMaximum(Calendar.DAY_OF_MONTH)
+                        set(Calendar.DAY_OF_MONTH, minOf(cnssDueDay, maxDay))
+                    }
+                    val cnssDueDateStr = format.format(cnssCal.time)
+                    val cnssSendCal = (cnssCal.clone() as Calendar).apply {
+                        add(Calendar.DAY_OF_YEAR, -daysBefore)
+                    }
+                    val cnssSendDateStr = format.format(cnssSendCal.time)
+
+                    val existingCnss = dao.getReminderByClientTypeAndMonth(
+                        client.clientName, client.telephone, ReminderType.CNSS, yearMonthPattern
+                    )
+                    if (existingCnss == null) {
+                        val text = generateSmsText(client.clientName, client.category, ReminderType.CNSS, cnssDueDateStr)
+                        dao.insertReminder(
+                            ClientReminderEntity(
+                                clientName = client.clientName,
+                                category = client.category,
+                                telephone = client.telephone,
+                                email = client.email,
+                                taxId = client.taxId,
+                                reminderType = ReminderType.CNSS,
+                                dueDate = cnssDueDateStr,
+                                sendDate = cnssSendDateStr,
+                                sendTime = defaultTime,
+                                texteSms = text,
+                                smsEnvoye = false
+                            )
+                        )
+                    }
+                }
+
+                // --- 3. ACOMPTES PROVISIONNELS (AP) : Juin=6, Septembre=9, Décembre=12 ---
+                if (currentMonth in listOf(6, 9, 12)) {
+                    val apDay = if (isEntreprise) acomptesDayEntreprise else acomptesDayPhysique
+                    val apCal = (now.clone() as Calendar).apply {
+                        val maxDay = getActualMaximum(Calendar.DAY_OF_MONTH)
+                        set(Calendar.DAY_OF_MONTH, minOf(apDay, maxDay))
+                    }
+                    val apDueDateStr = format.format(apCal.time)
+                    val apSendCal = (apCal.clone() as Calendar).apply {
+                        add(Calendar.DAY_OF_YEAR, -daysBefore)
+                    }
+                    val apSendDateStr = format.format(apSendCal.time)
+
+                    val existingAp = dao.getReminderByClientTypeAndMonth(
+                        client.clientName, client.telephone, ReminderType.ACOMPTES_PROVISIONNELS, yearMonthPattern
+                    )
+                    if (existingAp == null) {
+                        val text = generateSmsText(client.clientName, client.category, ReminderType.ACOMPTES_PROVISIONNELS, apDueDateStr)
+                        dao.insertReminder(
+                            ClientReminderEntity(
+                                clientName = client.clientName,
+                                category = client.category,
+                                telephone = client.telephone,
+                                email = client.email,
+                                taxId = client.taxId,
+                                reminderType = ReminderType.ACOMPTES_PROVISIONNELS,
+                                dueDate = apDueDateStr,
+                                sendDate = apSendDateStr,
+                                sendTime = defaultTime,
+                                texteSms = text,
+                                smsEnvoye = false
+                            )
+                        )
+                    }
                 }
             }
         }

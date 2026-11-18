@@ -706,7 +706,118 @@ function onTypeFilterChanged(type) {
   renderTable();
 }
 
+function syncCycleForActiveDate() {
+  const now = getTodayDate();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const monthPad = String(currentMonth).padStart(2, '0');
+  const yearMonthPrefix = `${currentYear}-${monthPad}`;
+
+  if (clientDatabase.length === 0 && clients.length > 0) {
+    syncClientsToDatabase();
+  }
+  if (clientDatabase.length === 0) return;
+
+  const daysBefore = config.defaultDaysBefore || 3;
+  const defaultTime = config.defaultSendTime || '09:00';
+  let changed = false;
+
+  clientDatabase.forEach(cl => {
+    const isEntreprise = cl.category === 'ENTREPRISE';
+
+    // 1. Déclaration Mensuelle (DM) - Tous les mois
+    const dmDueDay = isEntreprise ? (config.dueDayEntreprise || 28) : (config.dueDayPhysique || 15);
+    const dmTarget = new Date(currentYear, currentMonth - 1, dmDueDay);
+    const dmDueDate = formatDate(dmTarget);
+    const dmSendTarget = new Date(dmTarget);
+    dmSendTarget.setDate(dmSendTarget.getDate() - daysBefore);
+    const dmSendDate = formatDate(dmSendTarget);
+
+    const hasDm = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'DECLARATION_MENSUELLE' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+    if (!hasDm) {
+      clients.push({
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        clientName: cl.clientName,
+        category: cl.category,
+        telephone: cl.telephone,
+        email: cl.email || '',
+        taxId: cl.taxId || '',
+        reminderType: 'DECLARATION_MENSUELLE',
+        dueDate: dmDueDate,
+        sendDate: dmSendDate,
+        sendTime: defaultTime,
+        texteSms: generateSmsText(cl.clientName, cl.category, 'DECLARATION_MENSUELLE', dmDueDate),
+        smsEnvoye: false
+      });
+      changed = true;
+    }
+
+    // 2. Cotisations CNSS (Janvier, Avril, Juillet, Octobre)
+    if ([1, 4, 7, 10].includes(currentMonth)) {
+      const cnssDay = config.cnssDueDay || 15;
+      const cnssTarget = new Date(currentYear, currentMonth - 1, cnssDay);
+      const cnssDueDate = formatDate(cnssTarget);
+      const cnssSendTarget = new Date(cnssTarget);
+      cnssSendTarget.setDate(cnssSendTarget.getDate() - daysBefore);
+      const cnssSendDate = formatDate(cnssSendTarget);
+
+      const hasCnss = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'CNSS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+      if (!hasCnss) {
+        clients.push({
+          id: Date.now() + Math.floor(Math.random() * 10000),
+          clientName: cl.clientName,
+          category: cl.category,
+          telephone: cl.telephone,
+          email: cl.email || '',
+          taxId: cl.taxId || '',
+          reminderType: 'CNSS',
+          dueDate: cnssDueDate,
+          sendDate: cnssSendDate,
+          sendTime: defaultTime,
+          texteSms: generateSmsText(cl.clientName, cl.category, 'CNSS', cnssDueDate),
+          smsEnvoye: false
+        });
+        changed = true;
+      }
+    }
+
+    // 3. Acomptes Provisionnels AP (Juin, Septembre, Décembre)
+    if ([6, 9, 12].includes(currentMonth)) {
+      const apDay = isEntreprise ? (config.acomptesDayEntreprise || 28) : (config.acomptesDayPhysique || 25);
+      const apTarget = new Date(currentYear, currentMonth - 1, apDay);
+      const apDueDate = formatDate(apTarget);
+      const apSendTarget = new Date(apTarget);
+      apSendTarget.setDate(apSendTarget.getDate() - daysBefore);
+      const apSendDate = formatDate(apSendTarget);
+
+      const hasAp = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'ACOMPTES_PROVISIONNELS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+      if (!hasAp) {
+        clients.push({
+          id: Date.now() + Math.floor(Math.random() * 10000),
+          clientName: cl.clientName,
+          category: cl.category,
+          telephone: cl.telephone,
+          email: cl.email || '',
+          taxId: cl.taxId || '',
+          reminderType: 'ACOMPTES_PROVISIONNELS',
+          dueDate: apDueDate,
+          sendDate: apSendDate,
+          sendTime: defaultTime,
+          texteSms: generateSmsText(cl.clientName, cl.category, 'ACOMPTES_PROVISIONNELS', apDueDate),
+          smsEnvoye: false
+        });
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) {
+    localStorage.setItem('comptapocket_clients', JSON.stringify(clients));
+  }
+}
+
 function getActiveReminders() {
+  syncCycleForActiveDate();
   const now = getTodayDate();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -720,16 +831,20 @@ function getActiveReminders() {
       itemMonth = parseInt(parts[1]);
     }
 
-    // Règle 1 : lorsque le nouveau mois commence le sms envoyé du mois précédent sera enlevé
+    // Règle 1 : SMS du mois précédent ne polluent pas le mois actif
     const isFromPastMonth = (itemYear < currentYear) || (itemYear === currentYear && itemMonth < currentMonth);
-    if (c.smsEnvoye && isFromPastMonth) return false;
+    if (isFromPastMonth) return false;
 
-    // Règle 2 : cotisation CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur
-    const isFutureMonth = (itemYear > currentYear) || (itemYear === currentYear && itemMonth > currentMonth);
-    if (isFutureMonth && (c.reminderType === 'CNSS' || c.reminderType === 'ACOMPTES_PROVISIONNELS')) {
-      return false;
-    }
-    return true;
+    // Règle 2 : Cotisations CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur
+    if (c.reminderType === 'CNSS' && ![1, 4, 7, 10].includes(currentMonth)) return false;
+    if (c.reminderType === 'ACOMPTES_PROVISIONNELS' && ![6, 9, 12].includes(currentMonth)) return false;
+
+    const isCurrentCycle = (itemYear === currentYear && itemMonth === currentMonth);
+    const isNextMonth = (itemYear === currentYear && itemMonth === currentMonth + 1) ||
+      (currentMonth === 12 && itemYear === currentYear + 1 && itemMonth === 1);
+    const isNextMonthDm = !c.smsEnvoye && c.reminderType === 'DECLARATION_MENSUELLE' && isNextMonth;
+
+    return isCurrentCycle || isNextMonthDm;
   });
 }
 
@@ -1474,11 +1589,14 @@ function setSimSpecificDay(day) {
 
 function setSimKeyDate(monthIndex, day) {
   const d = getTodayDate();
-  d.setMonth(monthIndex);
-  d.setDate(day);
-  simulatedDate = formatDate(d);
+  const currentM = d.getMonth();
+  const y = d.getFullYear();
+  const targetYear = (monthIndex < currentM) ? y + 1 : y;
+  const target = new Date(targetYear, monthIndex, day);
+  simulatedDate = formatDate(target);
   localStorage.setItem('comptapocket_simulated_date', simulatedDate);
   updateSimulationUI();
+  syncCycleForActiveDate();
   renderTable();
   updateStats();
   initFormDates();

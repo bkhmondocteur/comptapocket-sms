@@ -66,6 +66,11 @@ fun HomeScreen(
     val simulatedCalendar by SimulationDateManager.simulatedDateFlow.collectAsState()
     val isSimulationActive = simulatedCalendar != null
 
+    // Synchronisation automatique du cycle lors de tout changement de date simulée ou réelle
+    LaunchedEffect(simulatedCalendar) {
+        viewModel.syncCycleForActiveDate()
+    }
+
     // Vérification automatique des mises à jour sur GitHub au démarrage
     LaunchedEffect(Unit) {
         try {
@@ -652,7 +657,10 @@ fun HomeScreen(
 
     // Dialogue Mode Simulation de Date (pour les tests)
     if (showSimulationDialog) {
-        SimulationDateDialog(onDismiss = { showSimulationDialog = false })
+        SimulationDateDialog(
+            onDismiss = { showSimulationDialog = false },
+            onDateChanged = { viewModel.syncCycleForActiveDate() }
+        )
     }
 
     // Dialogue À propos & Mises à jour

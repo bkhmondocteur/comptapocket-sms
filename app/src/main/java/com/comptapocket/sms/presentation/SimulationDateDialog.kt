@@ -183,15 +183,17 @@ fun SimulationDateDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val y = todayCal.get(Calendar.YEAR)
+                    val currentM = todayCal.get(Calendar.MONTH)
                     listOf(
                         "15 Jan" to (Calendar.JANUARY to 15),
                         "15 Avr" to (Calendar.APRIL to 15),
                         "15 Juil" to (Calendar.JULY to 15),
                         "15 Oct" to (Calendar.OCTOBER to 15)
                     ).forEach { (lbl, pair) ->
+                        val targetYear = if (pair.first < currentM) y + 1 else y
                         OutlinedButton(
                             onClick = {
-                                SimulationDateManager.setSimulatedDate(y, pair.first, pair.second)
+                                SimulationDateManager.setSimulatedDate(targetYear, pair.first, pair.second)
                                 onDateChanged()
                             },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
@@ -209,14 +211,16 @@ fun SimulationDateDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val y = todayCal.get(Calendar.YEAR)
+                    val currentM = todayCal.get(Calendar.MONTH)
                     listOf(
                         "28 Juin (AP1)" to (Calendar.JUNE to 28),
                         "28 Sept (AP2)" to (Calendar.SEPTEMBER to 28),
                         "28 Déc (AP3)" to (Calendar.DECEMBER to 28)
                     ).forEach { (lbl, pair) ->
+                        val targetYear = if (pair.first < currentM) y + 1 else y
                         OutlinedButton(
                             onClick = {
-                                SimulationDateManager.setSimulatedDate(y, pair.first, pair.second)
+                                SimulationDateManager.setSimulatedDate(targetYear, pair.first, pair.second)
                                 onDateChanged()
                             },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
