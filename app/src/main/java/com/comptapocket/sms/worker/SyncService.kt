@@ -82,14 +82,23 @@ class SyncService : Service() {
                 val dao = AppDatabase.getDatabase(applicationContext).clientReminderDao()
                 val unsent = dao.getUnsentReminders()
                 val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                val formatDay = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val nowCal = SimulationDateManager.getTodayCalendar()
+                val todayDateStr = formatDay.format(nowCal.time)
                 val now = if (SimulationDateManager.isSimulationActive()) {
-                    SimulationDateManager.getTodayCalendar().timeInMillis
+                    nowCal.timeInMillis
                 } else {
                     System.currentTimeMillis()
                 }
 
                 val dueToSend = unsent.filter { item ->
                     try {
+                        // Règle formelle : Si la date du jour dépasse la date d'échéance légale (1 jour ou plus),
+                        // ce n'est pas la peine d'envoyer un SMS
+                        if (todayDateStr > item.dueDate) {
+                            return@filter false
+                        }
+
                         val parsed = format.parse("${item.sendDate} ${item.sendTime}")
                         parsed != null && parsed.time <= now
                     } catch (e: Exception) {

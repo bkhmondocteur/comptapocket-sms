@@ -157,12 +157,15 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         item.clientName.trim().lowercase()
                     }
 
+                    val hasCurrentMonthDm = currentMonthDmSentByClient.containsKey(clientKey)
                     val isCurrentDmSent = currentMonthDmSentByClient[clientKey] == true
 
                     if (isCurrentMonth) {
                         true
                     } else if (isNextMonth) {
-                        !item.smsEnvoye && isCurrentDmSent
+                        // Pour les clients ajoutés après l'échéance du mois en cours, la DM du mois suivant
+                        // est directement leur échéance active sans attendre un envoi du mois échu !
+                        !item.smsEnvoye && (isCurrentDmSent || !hasCurrentMonthDm)
                     } else {
                         false
                     }
@@ -174,7 +177,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     if (item.smsEnvoye) {
                         todayStr <= item.dueDate && (currentMonth in listOf(1, 4, 7, 10) || itemYearMonth == currentYearMonth)
                     } else {
-                        currentMonth in listOf(1, 4, 7, 10) && itemYearMonth == currentYearMonth
+                        currentMonth in listOf(1, 4, 7, 10) && itemYearMonth == currentYearMonth && todayStr <= item.dueDate
                     }
                 }
                 ReminderType.ACOMPTES_PROVISIONNELS -> {
@@ -184,7 +187,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     if (item.smsEnvoye) {
                         todayStr <= item.dueDate && (currentMonth in listOf(6, 9, 12) || itemYearMonth == currentYearMonth)
                     } else {
-                        currentMonth in listOf(6, 9, 12) && itemYearMonth == currentYearMonth
+                        currentMonth in listOf(6, 9, 12) && itemYearMonth == currentYearMonth && todayStr <= item.dueDate
                     }
                 }
                 else -> {
@@ -460,12 +463,26 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
                     cal.set(Calendar.DAY_OF_MONTH, minOf(dueDay, maxDay))
                     val due = format.format(cal.time)
-                    ScheduleResult(
-                        dueDate = due,
-                        sendDate = todayDateStr,
-                        sendTime = currentTimeStr,
-                        shouldSendImmediately = true
-                    )
+                    val plannedSendCal = (cal.clone() as Calendar).apply {
+                        add(Calendar.DAY_OF_YEAR, -daysBefore)
+                    }
+                    val plannedSendDateStr = format.format(plannedSendCal.time)
+
+                    if (todayDateStr >= plannedSendDateStr) {
+                        ScheduleResult(
+                            dueDate = due,
+                            sendDate = todayDateStr,
+                            sendTime = currentTimeStr,
+                            shouldSendImmediately = true
+                        )
+                    } else {
+                        ScheduleResult(
+                            dueDate = due,
+                            sendDate = plannedSendDateStr,
+                            sendTime = defaultTime,
+                            shouldSendImmediately = false
+                        )
+                    }
                 } else {
                     val cal = (today.clone() as Calendar).apply {
                         add(Calendar.MONTH, 1)
@@ -734,7 +751,13 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 val newId = dao.insertReminder(finalItem).toInt()
                 val savedEntity = finalItem.copy(id = newId)
 
-                if (schedule.shouldSendImmediately && (reminderType == ReminderType.PACK_COMPLET || sendDate.isBlank())) {
+                val formatDay = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val todayDateStr = formatDay.format(SimulationDateManager.getTodayCalendar().time)
+                val isExpired = todayDateStr > itemDueDate
+
+                // Règle : Si le client est ajouté après la date d'échéance de 1 jour ou plus,
+                // ce n'est pas la peine d'envoyer un SMS !
+                if (!isExpired && schedule.shouldSendImmediately && (reminderType == ReminderType.PACK_COMPLET || sendDate.isBlank())) {
                     smsSender.sendReminders(listOf(savedEntity)) { sentId ->
                         launch {
                             val markTime = if (SimulationDateManager.isSimulationActive()) {
@@ -746,7 +769,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                             SyncService.scheduleNextPeriodicReminder(getApplication(), savedEntity)
                         }
                     }
-                } else {
+                } else if (!isExpired) {
                     SyncService.scheduleExactAlarm(getApplication(), newId, itemSendDate, itemSendTime)
                 }
             }
@@ -840,23 +863,62 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     val existingDm = dao.getReminderByClientTypeAndMonth(
                         clientCleanName, clientCleanPhone, ReminderType.DECLARATION_MENSUELLE, yearMonthPattern
                     )
+                    val todayDateStr = format.format(now.time)
                     if (existingDm == null) {
-                        val text = generateSmsText(clientCleanName, client.category, ReminderType.DECLARATION_MENSUELLE, dmDueDateStr)
-                        dao.insertReminder(
-                            ClientReminderEntity(
-                                clientName = clientCleanName,
-                                category = client.category,
-                                telephone = clientCleanPhone,
-                                email = client.email,
-                                taxId = client.taxId,
-                                reminderType = ReminderType.DECLARATION_MENSUELLE,
-                                dueDate = dmDueDateStr,
-                                sendDate = dmSendDateStr,
-                                sendTime = defaultTime,
-                                texteSms = text,
-                                smsEnvoye = false
+                        if (todayDateStr > dmDueDateStr) {
+                            // Règle formelle : Si le client est ajouté après la date d'échéance de 1 jour ou plus,
+                            // ce n'est pas la peine d'envoyer un SMS pour cette échéance passée.
+                            // On programme directement l'échéance du mois suivant !
+                            val nextDmCal = (now.clone() as Calendar).apply {
+                                add(Calendar.MONTH, 1)
+                                val maxDay = getActualMaximum(Calendar.DAY_OF_MONTH)
+                                set(Calendar.DAY_OF_MONTH, minOf(dmDueDay, maxDay))
+                            }
+                            val nextDmDueDateStr = format.format(nextDmCal.time)
+                            val nextDmSendCal = (nextDmCal.clone() as Calendar).apply {
+                                add(Calendar.DAY_OF_YEAR, -daysBefore)
+                            }
+                            val nextDmSendDateStr = format.format(nextDmSendCal.time)
+                            val nextPattern = String.format("%04d-%02d-%%", nextDmCal.get(Calendar.YEAR), nextDmCal.get(Calendar.MONTH) + 1)
+                            val existingNextDm = dao.getReminderByClientTypeAndMonth(
+                                clientCleanName, clientCleanPhone, ReminderType.DECLARATION_MENSUELLE, nextPattern
                             )
-                        )
+                            if (existingNextDm == null) {
+                                val text = generateSmsText(clientCleanName, client.category, ReminderType.DECLARATION_MENSUELLE, nextDmDueDateStr)
+                                dao.insertReminder(
+                                    ClientReminderEntity(
+                                        clientName = clientCleanName,
+                                        category = client.category,
+                                        telephone = clientCleanPhone,
+                                        email = client.email,
+                                        taxId = client.taxId,
+                                        reminderType = ReminderType.DECLARATION_MENSUELLE,
+                                        dueDate = nextDmDueDateStr,
+                                        sendDate = nextDmSendDateStr,
+                                        sendTime = defaultTime,
+                                        texteSms = text,
+                                        smsEnvoye = false
+                                    )
+                                )
+                            }
+                        } else {
+                            val text = generateSmsText(clientCleanName, client.category, ReminderType.DECLARATION_MENSUELLE, dmDueDateStr)
+                            dao.insertReminder(
+                                ClientReminderEntity(
+                                    clientName = clientCleanName,
+                                    category = client.category,
+                                    telephone = clientCleanPhone,
+                                    email = client.email,
+                                    taxId = client.taxId,
+                                    reminderType = ReminderType.DECLARATION_MENSUELLE,
+                                    dueDate = dmDueDateStr,
+                                    sendDate = dmSendDateStr,
+                                    sendTime = defaultTime,
+                                    texteSms = text,
+                                    smsEnvoye = false
+                                )
+                            )
+                        }
                     }
 
                     // --- 2. COTISATIONS CNSS : Trimestrielle (Janvier=1, Avril=4, Juillet=7, Octobre=10) ---
@@ -874,7 +936,9 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         val existingCnss = dao.getReminderByClientTypeAndMonth(
                             clientCleanName, clientCleanPhone, ReminderType.CNSS, yearMonthPattern
                         )
-                        if (existingCnss == null) {
+                        // Si le client est ajouté après la date d'échéance de la CNSS (ex: 16/01 pour échéance 15/01),
+                        // ce n'est pas la peine d'envoyer un SMS pour cette échéance passée.
+                        if (existingCnss == null && todayDateStr <= cnssDueDateStr) {
                             val text = generateSmsText(clientCleanName, client.category, ReminderType.CNSS, cnssDueDateStr)
                             dao.insertReminder(
                                 ClientReminderEntity(
@@ -910,7 +974,9 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         val existingAp = dao.getReminderByClientTypeAndMonth(
                             clientCleanName, clientCleanPhone, ReminderType.ACOMPTES_PROVISIONNELS, yearMonthPattern
                         )
-                        if (existingAp == null) {
+                        // Si le client est ajouté après la date d'échéance de l'AP (ex: 26/12 pour échéance 25/12),
+                        // ce n'est pas la peine d'envoyer un SMS pour cette échéance passée.
+                        if (existingAp == null && todayDateStr <= apDueDateStr) {
                             val text = generateSmsText(clientCleanName, client.category, ReminderType.ACOMPTES_PROVISIONNELS, apDueDateStr)
                             dao.insertReminder(
                                 ClientReminderEntity(
@@ -1260,7 +1326,9 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             try {
                 val unsent = dao.getUnsentReminders()
                 val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                val formatDay = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 val nowCal = SimulationDateManager.getTodayCalendar()
+                val todayDateStr = formatDay.format(nowCal.time)
                 val nowMillis = if (SimulationDateManager.isSimulationActive()) {
                     nowCal.timeInMillis
                 } else {
@@ -1269,6 +1337,12 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
                 val dueToSend = unsent.filter { item ->
                     try {
+                        // Règle formelle : Si la date du jour dépasse la date d'échéance légale de 1 jour ou plus (today > dueDate),
+                        // ce n'est pas la peine d'envoyer un SMS !
+                        if (todayDateStr > item.dueDate) {
+                            return@filter false
+                        }
+
                         val parsed = format.parse("${item.sendDate} ${item.sendTime}")
                         parsed != null && parsed.time <= nowMillis
                     } catch (e: Exception) {
