@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="true"
@@ -37,6 +38,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".sms.SmsSentReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".worker.BootReceiver"
             android:exported="true">
             <intent-filter>
@@ -48,6 +53,15 @@
             android:name=".worker.SyncService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- Service de réveil système Firebase Cloud Messaging (FCM) -->
+        <service
+            android:name=".firebase.ComptaPocketFcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
     </application>
 

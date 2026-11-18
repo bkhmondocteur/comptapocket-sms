@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "52721567275",
+    "firebase_url": "https://docpocket-rdv-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "docpocket-rdv",
+    "storage_bucket": "docpocket-rdv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:52721567275:android:5ab67fa6ae3c3c9705cc6e",
+        "android_client_info": {
+          "package_name": "com.comptapocket.sms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHfojIB8BfwbJpbpwLJMm2RhGKmUnS8M4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:52721567275:android:3e73228b2bf6cd3d05cc6e",
+        "android_client_info": {
+          "package_name": "com.docpocket.smsrdv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHfojIB8BfwbJpbpwLJMm2RhGKmUnS8M4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

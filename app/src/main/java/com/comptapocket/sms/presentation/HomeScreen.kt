@@ -49,6 +49,7 @@ fun HomeScreen(
     val prefs = context.getSharedPreferences("comptapocket_prefs", Context.MODE_PRIVATE)
     val cabinetName = prefs.getString("cabinet_name", "Cabinet Comptable") ?: "Cabinet Comptable"
 
+    val clientCards by viewModel.filteredClientCards.collectAsState()
     val reminders by viewModel.filteredReminders.collectAsState()
     val activeReminders by viewModel.activeReminders.collectAsState()
     val allReminders by viewModel.allReminders.collectAsState()
@@ -107,8 +108,8 @@ fun HomeScreen(
     }
 
     // Statistics counts calculés sur le cycle actif
-    val entreprisesCount = activeReminders.count { it.category == ClientCategory.ENTREPRISE }
-    val physiquesCount = activeReminders.count { it.category == ClientCategory.PERSONNE_PHYSIQUE }
+    val entreprisesCount = clientCards.count { it.category == ClientCategory.ENTREPRISE }
+    val physiquesCount = clientCards.count { it.category == ClientCategory.PERSONNE_PHYSIQUE }
     val pendingCount = activeReminders.count { !it.smsEnvoye }
     val sentCount = activeReminders.count { it.smsEnvoye }
 
@@ -160,14 +161,16 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
                 onClick = {
                     editingReminder = null
                     showClientDialog = true
                 },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Nouveau Client") }
-            )
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Nouveau Client")
+            }
         }
     ) { paddingValues ->
         Column(
@@ -242,10 +245,10 @@ fun HomeScreen(
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    StatBadge("🏢 Sociétés", entreprisesCount.toString(), Color(0xFF1E88E5))
-                    StatBadge("👤 Pers. phys.", physiquesCount.toString(), Color(0xFF8E24AA))
-                    StatBadge("⏳ En attente", pendingCount.toString(), Color(0xFFE65100))
-                    StatBadge("✅ Envoyés", sentCount.toString(), Color(0xFF2E7D32))
+                    StatBadge("🏢 Soc.", entreprisesCount.toString(), Color(0xFF1E88E5))
+                    StatBadge("👤 Phys.", physiquesCount.toString(), Color(0xFF8E24AA))
+                    StatBadge("⏳ Attente", pendingCount.toString(), Color(0xFFE65100))
+                    StatBadge("✅ Envoyé", sentCount.toString(), Color(0xFF2E7D32))
                 }
             }
 
@@ -400,7 +403,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${reminders.size} résultat(s)",
+                    text = "${clientCards.size} client(s) • ${reminders.size} déclaration(s)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -415,8 +418,8 @@ fun HomeScreen(
                 }
             }
 
-            // Liste des rappels
-            if (reminders.isEmpty()) {
+            // Liste des Cartes Clients (Chaque client a une seule carte regroupant toutes ses déclarations actives)
+            if (clientCards.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -452,27 +455,28 @@ fun HomeScreen(
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 80.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(reminders, key = { it.id }) { reminder ->
-                        ReminderCard(
-                            reminder = reminder,
-                            onEdit = {
-                                editingReminder = reminder
+                    items(clientCards, key = { it.clientKey }) { clientCard ->
+                        ClientCard(
+                            clientWithActions = clientCard,
+                            onEditClient = {
+                                val firstReminder = clientCard.reminders.firstOrNull()
+                                editingReminder = firstReminder
                                 showClientDialog = true
                             },
-                            onDelete = {
-                                viewModel.deleteReminder(reminder.id)
-                                Toast.makeText(context, "Client supprimé", Toast.LENGTH_SHORT).show()
+                            onDeleteClient = {
+                                viewModel.deleteRemindersForClient(clientCard.clientName, clientCard.telephone)
+                                Toast.makeText(context, "Client ${clientCard.clientName} supprimé", Toast.LENGTH_SHORT).show()
                             },
-                            onSendNow = {
+                            onSendSingleSms = { reminder ->
                                 viewModel.sendRemindersNow(listOf(reminder)) {
-                                    Toast.makeText(context, "Envoi terminé pour ${reminder.clientName}", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Envoi terminé pour ${reminder.clientName} (${ReminderType.getShortLabel(reminder.reminderType)})", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            onResetStatus = {
-                                viewModel.resetSmsStatus(reminder.id)
+                            onResetStatus = { reminderId ->
+                                viewModel.resetSmsStatus(reminderId)
                                 Toast.makeText(context, "Statut réinitialisé en attente", Toast.LENGTH_SHORT).show()
                             },
-                            onQuickDateChange = {
+                            onQuickDateChange = { reminder ->
                                 quickDateChangeTarget = reminder
                             }
                         )
@@ -726,18 +730,15 @@ fun StatBadge(label: String, count: String, color: Color) {
 }
 
 @Composable
-fun ReminderCard(
-    reminder: ClientReminderEntity,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onSendNow: () -> Unit,
-    onResetStatus: () -> Unit,
-    onQuickDateChange: () -> Unit
+fun ClientCard(
+    clientWithActions: ClientWithActions,
+    onEditClient: () -> Unit,
+    onDeleteClient: () -> Unit,
+    onSendSingleSms: (ClientReminderEntity) -> Unit,
+    onResetStatus: (Int) -> Unit,
+    onQuickDateChange: (ClientReminderEntity) -> Unit
 ) {
-    var expandedSms by remember { mutableStateOf(false) }
-
-    val isEntreprise = reminder.category == ClientCategory.ENTREPRISE
-    val categoryColor = if (isEntreprise) Color(0xFF1976D2) else Color(0xFF7B1FA2)
+    val isEntreprise = clientWithActions.category == ClientCategory.ENTREPRISE
     val categoryBg = if (isEntreprise) Color(0xFFE3F2FD) else Color(0xFFF3E5F5)
 
     Card(
@@ -746,17 +747,16 @@ fun ReminderCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Ligne d'en-tête : [Symbole catégorie seul] + [Nom Client & Badge Abrégé DM/CNSS/AP] + [Badge Statut Envoyé / En attente]
+            // 1. En-tête Client : [Symbole catégorie seul] + [Nom & Coordonnées] + [Actions Modifier/Supprimer]
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Symbole de la catégorie UNIQUEMENT sans texte (🏢 pour Société, 👤 pour Personne physique)
                     Box(
                         modifier = Modifier
                             .size(38.dp)
@@ -774,120 +774,188 @@ fun ReminderCard(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = reminder.clientName,
+                            text = clientWithActions.clientName,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        // Symbole et abréviation UNIQUEMENT : 📄 DM, 🛡️ CNSS, 💰 AP
-                        val (typeBg, typeColor, typeLabel) = when (reminder.reminderType) {
-                            ReminderType.DECLARATION_MENSUELLE -> Triple(Color(0xFFE3F2FD), Color(0xFF0D47A1), "📄 DM")
-                            ReminderType.CNSS -> Triple(Color(0xFFE8F5E9), Color(0xFF1B5E20), "🛡️ CNSS")
-                            ReminderType.ACOMPTES_PROVISIONNELS -> Triple(Color(0xFFFFF8E1), Color(0xFFB78103), "💰 AP")
-                            else -> Triple(Color(0xFFF3E5F5), Color(0xFF4A148C), "📌 Autre")
-                        }
-                        Surface(
-                            color = typeBg,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Phone,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = typeLabel,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = typeColor,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                text = clientWithActions.telephone,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (!clientWithActions.taxId.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "• MF: ${clientWithActions.taxId}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Actions Client (Modifier / Supprimer)
+                Row {
+                    IconButton(onClick = onEditClient, modifier = Modifier.size(30.dp)) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Modifier client",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(onClick = onDeleteClient, modifier = Modifier.size(30.dp)) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Supprimer",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Divider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 2. Déclarations et SMS d'échéances regroupés sur cette même carte
+            clientWithActions.reminders.forEach { reminder ->
+                DeclarationActionRow(
+                    reminder = reminder,
+                    onSendNow = { onSendSingleSms(reminder) },
+                    onResetStatus = { onResetStatus(reminder.id) },
+                    onQuickDateChange = { onQuickDateChange(reminder) }
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun DeclarationActionRow(
+    reminder: ClientReminderEntity,
+    onSendNow: () -> Unit,
+    onResetStatus: () -> Unit,
+    onQuickDateChange: () -> Unit
+) {
+    var expandedSms by remember { mutableStateOf(false) }
+
+    val (typeBg, typeColor, typeLabel) = when (reminder.reminderType) {
+        ReminderType.DECLARATION_MENSUELLE -> Triple(Color(0xFFE3F2FD), Color(0xFF0D47A1), "📄 DM")
+        ReminderType.CNSS -> Triple(Color(0xFFE8F5E9), Color(0xFF1B5E20), "🛡️ CNSS")
+        ReminderType.ACOMPTES_PROVISIONNELS -> Triple(Color(0xFFFFF8E1), Color(0xFFB78103), "💰 AP")
+        else -> Triple(Color(0xFFF3E5F5), Color(0xFF4A148C), "📌 Autre")
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Symbole et Abréviation de la déclaration (📄 DM, 🛡️ CNSS, 💰 AP)
+                Surface(
+                    color = typeBg,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = typeLabel,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = typeColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Dates d'échéance légale et d'envoi programmé
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Limite : ${reminder.dueDate}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Envoi : ${reminder.sendDate} à ${reminder.sendTime}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = onQuickDateChange, modifier = Modifier.size(18.dp)) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Changer date",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
-                // Statut Envoi Badge compact SANS le mot "Mention", juste "En attente" ou "Envoyé"
+                // Statut Envoyé / En attente (compact, sans mot Mention)
                 Surface(
                     color = if (reminder.smsEnvoye) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.clickable { onResetStatus() }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = if (reminder.smsEnvoye) Icons.Default.CheckCircle else Icons.Default.Notifications,
                             contentDescription = null,
                             tint = if (reminder.smsEnvoye) Color(0xFF2E7D32) else Color(0xFFE65100),
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = if (reminder.smsEnvoye) "Envoyé" else "En attente",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (reminder.smsEnvoye) Color(0xFF2E7D32) else Color(0xFFE65100)
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Informations coordonnées
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Bouton d'envoi immédiat du SMS si en attente
+                if (!reminder.smsEnvoye) {
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(reminder.telephone, fontSize = 13.sp)
-                }
-
-                if (!reminder.taxId.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("MF: ${reminder.taxId}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = onSendNow, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Send,
+                            contentDescription = "Envoyer maintenant",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Bloc des dates : Date limite légale VS Date programmée d'envoi du SMS
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("📅 Date limite légale :", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(reminder.dueDate, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("⏰ Envoi SMS programmé :", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            IconButton(onClick = onQuickDateChange, modifier = Modifier.size(20.dp)) {
-                                Icon(Icons.Default.Edit, contentDescription = "Changer date d'envoi", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        Text("${reminder.sendDate} à ${reminder.sendTime}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-
-            // Aperçu du message SMS pliable
-            Spacer(modifier = Modifier.height(6.dp))
+            // Aperçu pliable du message SMS
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -896,65 +964,30 @@ fun ReminderCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = if (expandedSms) "Masquer le SMS" else "Voir le message SMS...",
-                    fontSize = 12.sp,
+                    text = if (expandedSms) "Masquer le SMS" else "Voir le SMS...",
+                    fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Icon(
                     if (expandedSms) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
 
             if (expandedSms) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = reminder.texteSms,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(8.dp)
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(6.dp)
                     )
-                }
-            }
-
-            // Barre d'actions en bas de chaque carte
-            Spacer(modifier = Modifier.height(10.dp))
-            Divider()
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Bouton individuel pour changer la date d'envoi
-                TextButton(onClick = onQuickDateChange, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Date d'envoi", fontSize = 12.sp)
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Envoyer maintenant
-                    IconButton(onClick = onSendNow) {
-                        Icon(Icons.Default.Send, contentDescription = "Envoyer immédiatement", tint = MaterialTheme.colorScheme.primary)
-                    }
-
-                    // Modifier
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "Modifier", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    // Supprimer
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "Supprimer", tint = MaterialTheme.colorScheme.error)
-                    }
                 }
             }
         }

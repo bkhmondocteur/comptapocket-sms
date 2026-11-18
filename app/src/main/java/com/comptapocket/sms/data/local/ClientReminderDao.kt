@@ -102,6 +102,9 @@ interface ClientReminderDao {
     @Query("UPDATE ClientReminders SET smsEnvoye = 1, sentTimestamp = :timestamp WHERE id = :id")
     suspend fun markSmsAsSent(id: Int, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE ClientReminders SET smsEnvoye = 1 WHERE id = :id AND smsEnvoye = 0")
+    suspend fun claimReminderForSending(id: Int): Int
+
     @Query("UPDATE ClientReminders SET smsEnvoye = 0, sentTimestamp = NULL WHERE id = :id")
     suspend fun resetSmsStatus(id: Int)
 

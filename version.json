@@ -1,8 +1,8 @@
 {
-  "versionCode": 4,
-  "versionName": "1.0.3",
+  "versionCode": 5,
+  "versionName": "1.0.4",
   "releaseDate": "2026-11-18",
-  "changelog": "- 🛡️ Correction du dédoublement de l'Acompte Provisionnel (AP) : Nettoyage automatique des doublons existants et verrouillage Mutex pour empêcher toute création en double\n- 🔄 Synchronisation unifiée du cycle actif sans concurrence\n- 🎯 Déduplication stricte dans l'affichage et dans la base de données",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.3/ComptaPocket-SMS.apk",
+  "changelog": "- 👤 Carte Client Unique Tout-en-Un : Regroupement de toutes les déclarations (DM, AP, CNSS) au sein d'une seule et même carte par client\n- 🔄 Conservation intelligente des statuts : le statut Envoyé de la DM reste affiché jusqu'à l'arrivée de la DM du mois suivant ; les statuts Envoyé de l'AP et de la CNSS restent visibles jusqu'à la date d'échéance légale du paiement\n- 🚀 Contournement du blocage d'envoi SMS : intégration Firebase Cloud Messaging (FCM High-Priority push) + Firestore + Vercel Cloud Cron pour réveiller le téléphone et garantir l'envoi même en veille profonde / Doze mode\n- 🛡️ Modem GSM renforcé : WakeLock processeur (3 min), support multi-SIM SubscriptionManager, SmsLock anti-doublon et accusé de réception SmsSentReceiver",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.4/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }

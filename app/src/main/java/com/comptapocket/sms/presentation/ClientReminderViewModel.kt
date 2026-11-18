@@ -9,6 +9,7 @@ import com.comptapocket.sms.data.local.ClientCategory
 import com.comptapocket.sms.data.local.ClientEntity
 import com.comptapocket.sms.data.local.ClientReminderEntity
 import com.comptapocket.sms.data.local.ReminderType
+import com.comptapocket.sms.firebase.FirebaseSyncManager
 import com.comptapocket.sms.network.RetrofitClient
 import com.comptapocket.sms.simulation.SimulationDateManager
 import com.comptapocket.sms.sms.SmsSender
@@ -34,6 +35,16 @@ data class ScheduleResult(
     val sendDate: String,
     val sendTime: String,
     val shouldSendImmediately: Boolean
+)
+
+data class ClientWithActions(
+    val clientKey: String,
+    val clientName: String,
+    val category: String,
+    val telephone: String,
+    val email: String? = null,
+    val taxId: String? = null,
+    val reminders: List<ClientReminderEntity> = emptyList()
 )
 
 class ClientReminderViewModel(application: Application) : AndroidViewModel(application) {
@@ -71,15 +82,17 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
     // 1. Rappels actifs du cycle :
     // - Réagit instantanément à tout changement de date simulée ou réelle.
-    // - Dès que le nouveau mois commence, les SMS envoyés du mois précédent sont enlevés.
-    // - Les SMS de CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur.
+    // - Pour la DM : Le statut envoyé reste affiché jusqu'à l'apparition du statut en attente du mois prochain.
+    // - Pour AP & CNSS : Le statut envoyé reste affiché jusqu'à la date d'échéance légale de paiement.
     val activeReminders: StateFlow<List<ClientReminderEntity>> = combine(
         rawReminders,
         SimulationDateManager.simulatedDateFlow
     ) { list, _ ->
+        val todayStr = SimulationDateManager.getTodayDateFormatted() // "yyyy-MM-dd"
         val now = SimulationDateManager.getTodayCalendar()
         val currentYear = now.get(Calendar.YEAR)
         val currentMonth = now.get(Calendar.MONTH) + 1 // 1-12
+        val currentYearMonth = String.format("%04d-%02d", currentYear, currentMonth)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
         list.filter { item ->
@@ -94,29 +107,45 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 }
             } catch (e: Exception) {}
 
-            // Règle 1 : Lorsque le nouveau mois commence, les SMS du mois précédent ne polluent pas le mois actif
-            val isFromPastMonth = (itemYear < currentYear) || (itemYear == currentYear && itemMonth < currentMonth)
-            if (isFromPastMonth) {
-                return@filter false
+            val itemYearMonth = String.format("%04d-%02d", itemYear, itemMonth)
+
+            when (item.reminderType) {
+                ReminderType.DECLARATION_MENSUELLE -> {
+                    // Pour la DM :
+                    // Le statut envoyé du mois en cours restera jusqu'à l'apparition du statut en attente du mois prochain.
+                    val isCurrentMonth = (itemYearMonth == currentYearMonth)
+                    val isNextMonth = (itemYear == currentYear && itemMonth == currentMonth + 1) ||
+                            (currentMonth == 12 && itemYear == currentYear + 1 && itemMonth == 1)
+                    val isNextMonthDm = !item.smsEnvoye && isNextMonth
+
+                    isCurrentMonth || isNextMonthDm
+                }
+                ReminderType.CNSS -> {
+                    // Pour la cotisation CNSS :
+                    // N'apparaît dès que le mois de l'échéance entre en vigueur (trimestres : Janvier=1, Avril=4, Juillet=7, Octobre=10)
+                    // Et reste affiché avec la mention "Envoyé" jusqu'à la date d'échéance du paiement (dueDate).
+                    if (item.smsEnvoye) {
+                        todayStr <= item.dueDate && (currentMonth in listOf(1, 4, 7, 10) || itemYearMonth == currentYearMonth)
+                    } else {
+                        currentMonth in listOf(1, 4, 7, 10) && itemYearMonth == currentYearMonth
+                    }
+                }
+                ReminderType.ACOMPTES_PROVISIONNELS -> {
+                    // Pour l'Acompte Provisionnel (AP) :
+                    // N'apparaît dès que le mois de l'échéance entre en vigueur (mois 6, 9, 12)
+                    // Et reste affiché avec la mention "Envoyé" jusqu'à la date d'échéance du paiement (dueDate).
+                    if (item.smsEnvoye) {
+                        todayStr <= item.dueDate && (currentMonth in listOf(6, 9, 12) || itemYearMonth == currentYearMonth)
+                    } else {
+                        currentMonth in listOf(6, 9, 12) && itemYearMonth == currentYearMonth
+                    }
+                }
+                else -> {
+                    val isCurrentCycle = (itemYearMonth == currentYearMonth)
+                    val notExpired = todayStr <= item.dueDate
+                    isCurrentCycle || notExpired
+                }
             }
-
-            // Règle 2 : Cotisations CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur
-            if (item.reminderType == ReminderType.CNSS && currentMonth !in listOf(1, 4, 7, 10)) {
-                return@filter false
-            }
-            if (item.reminderType == ReminderType.ACOMPTES_PROVISIONNELS && currentMonth !in listOf(6, 9, 12)) {
-                return@filter false
-            }
-
-            // Affichage focalisé sur le cycle du mois en cours
-            val isCurrentCycle = (itemYear == currentYear && itemMonth == currentMonth)
-
-            // Règle 3 : Dès l'envoi du SMS du mois en cours, la programmation pour le mois suivant s'affiche
-            val isNextMonth = (itemYear == currentYear && itemMonth == currentMonth + 1) ||
-                    (currentMonth == 12 && itemYear == currentYear + 1 && itemMonth == 1)
-            val isNextMonthDm = !item.smsEnvoye && item.reminderType == ReminderType.DECLARATION_MENSUELLE && isNextMonth
-
-            isCurrentCycle || isNextMonthDm
         }.distinctBy {
             val monthKey = if (it.dueDate.length >= 7) it.dueDate.substring(0, 7) else it.dueDate
             val identity = if (it.telephone.isNotBlank()) it.telephone.trim() else it.clientName.trim().lowercase()
@@ -147,6 +176,34 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
             matchesQuery && matchesCategory && matchesType && matchesStatus
         }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Regroupement par Carte Client unique : chaque client a UNE SEULE carte contenant toutes ses actions actives (DM, CNSS, AP)
+    val filteredClientCards: StateFlow<List<ClientWithActions>> = combine(
+        filteredReminders,
+        dao.getAllClients()
+    ) { remindersList, clientsList ->
+        val remindersByClient = remindersList.groupBy { item ->
+            val cleanPhone = item.telephone.replace(Regex("[^0-9+]"), "").trim()
+            if (cleanPhone.isNotEmpty()) cleanPhone else item.clientName.trim().lowercase()
+        }
+
+        remindersByClient.map { (key, clientReminders) ->
+            val matchingClient = clientsList.firstOrNull { c ->
+                val cPhone = c.telephone.replace(Regex("[^0-9+]"), "").trim()
+                (cPhone.isNotEmpty() && cPhone == key) || c.clientName.trim().equals(key, ignoreCase = true)
+            }
+            val firstReminder = clientReminders.first()
+            ClientWithActions(
+                clientKey = key,
+                clientName = matchingClient?.clientName ?: firstReminder.clientName,
+                category = matchingClient?.category ?: firstReminder.category,
+                telephone = matchingClient?.telephone ?: firstReminder.telephone,
+                email = matchingClient?.email ?: firstReminder.email,
+                taxId = matchingClient?.taxId ?: firstReminder.taxId,
+                reminders = clientReminders.sortedWith(compareBy({ it.reminderType }, { it.dueDate }))
+            )
+        }.sortedBy { it.clientName }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allReminders: StateFlow<List<ClientReminderEntity>> = rawReminders.stateIn(
@@ -822,6 +879,21 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     }
                 }
             }
+            syncAllUnsentToCloud()
+        }
+    }
+
+    /**
+     * Synchronise tous les rappels non encore envoyés vers Firestore pour prise en charge Cloud (Vercel FCM)
+     */
+    fun syncAllUnsentToCloud() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val list = dao.getUnsentReminders()
+                for (item in list) {
+                    FirebaseSyncManager.syncReminderToCloud(getApplication(), item)
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -967,6 +1039,20 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch(Dispatchers.IO) {
             SyncService.cancelAlarm(getApplication(), id)
             dao.deleteReminder(id)
+        }
+    }
+
+    fun deleteRemindersForClient(clientName: String, telephone: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = dao.getRemindersForClient(telephone, clientName)
+            for (r in list) {
+                SyncService.cancelAlarm(getApplication(), r.id)
+            }
+            dao.deleteRemindersForClient(clientName, telephone)
+            val client = dao.getClientByPhone(telephone) ?: dao.getClientByName(clientName)
+            if (client != null) {
+                dao.deleteClient(client.id)
+            }
         }
     }
 

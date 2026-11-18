@@ -1,11 +1,16 @@
 package com.comptapocket.sms
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,12 +28,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.comptapocket.sms.data.local.ClientEntity
+import com.comptapocket.sms.firebase.FirebaseSyncManager
 import com.comptapocket.sms.presentation.ClientDatabaseScreen
 import com.comptapocket.sms.presentation.ClientReminderViewModel
 import com.comptapocket.sms.presentation.HomeScreen
 import com.comptapocket.sms.presentation.LicenseScreen
 import com.comptapocket.sms.presentation.SettingsScreen
 import com.comptapocket.sms.worker.SyncService
+import com.google.firebase.messaging.FirebaseMessaging
 
 enum class MainNavigationTab {
     REMINDERS,
@@ -36,6 +43,10 @@ enum class MainNavigationTab {
 }
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -46,6 +57,43 @@ class MainActivity : ComponentActivity() {
         } else {
             Toast.makeText(this, "La permission SMS est requise pour l'envoi des rappels.", Toast.LENGTH_LONG).show()
         }
+        checkExactAlarmAndBatteryExemptions()
+    }
+
+    private fun checkExactAlarmAndBatteryExemptions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(AlarmManager::class.java)
+            if (!alarmManager.canScheduleExactAlarms()) {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                try {
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erreur ouverture SCHEDULE_EXACT_ALARM: ${e.message}")
+                }
+                return
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            if (powerManager != null && !powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                try {
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erreur ouverture REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: ${e.message}")
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkExactAlarmAndBatteryExemptions()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +110,22 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
 
         val prefs = getSharedPreferences("comptapocket_prefs", Context.MODE_PRIVATE)
+
+        // Initialisation du réveil Cloud via Firebase Cloud Messaging (FCM)
+        try {
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val token = task.result
+                    Log.i(TAG, "Token FCM initialisé: $token")
+                    prefs.edit().putString("fcm_token", token).apply()
+                    FirebaseSyncManager.saveDeviceToken(applicationContext, token)
+                } else {
+                    Log.w(TAG, "Échec récupération FCM token: ${task.exception?.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Erreur initialisation FCM: ${e.message}")
+        }
 
         setContent {
             var isLicensed by remember {
