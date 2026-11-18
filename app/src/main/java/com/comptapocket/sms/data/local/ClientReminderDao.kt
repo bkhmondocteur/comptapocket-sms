@@ -34,7 +34,7 @@ interface ClientReminderDao {
     @Query("SELECT * FROM ClientReminders")
     suspend fun getAllRemindersList(): List<ClientReminderEntity>
 
-    @Query("SELECT * FROM ClientReminders WHERE (clientName = :clientName OR telephone = :telephone) AND reminderType = :type AND dueDate LIKE :yearMonthPattern LIMIT 1")
+    @Query("SELECT * FROM ClientReminders WHERE (TRIM(clientName) = TRIM(:clientName) OR (LENGTH(TRIM(:telephone)) > 0 AND TRIM(telephone) = TRIM(:telephone))) AND reminderType = :type AND dueDate LIKE :yearMonthPattern LIMIT 1")
     suspend fun getReminderByClientTypeAndMonth(clientName: String, telephone: String, type: String, yearMonthPattern: String): ClientReminderEntity?
 
     @Query("SELECT * FROM Clients WHERE id = :id LIMIT 1")

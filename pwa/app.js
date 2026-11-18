@@ -713,6 +713,26 @@ function syncCycleForActiveDate() {
   const monthPad = String(currentMonth).padStart(2, '0');
   const yearMonthPrefix = `${currentYear}-${monthPad}`;
 
+  // Nettoyage préventif des doublons
+  const seenKeys = new Set();
+  const cleanedClients = [];
+  let hadDuplicates = false;
+  clients.forEach(c => {
+    const mKey = c.dueDate ? c.dueDate.substring(0, 7) : '';
+    const idKey = (c.telephone || c.clientName || '').trim().toLowerCase();
+    const key = `${idKey}|${c.reminderType}|${mKey}`;
+    if (seenKeys.has(key)) {
+      hadDuplicates = true;
+    } else {
+      seenKeys.add(key);
+      cleanedClients.push(c);
+    }
+  });
+  if (hadDuplicates) {
+    clients = cleanedClients;
+    localStorage.setItem('comptapocket_clients', JSON.stringify(clients));
+  }
+
   if (clientDatabase.length === 0 && clients.length > 0) {
     syncClientsToDatabase();
   }
@@ -724,6 +744,8 @@ function syncCycleForActiveDate() {
 
   clientDatabase.forEach(cl => {
     const isEntreprise = cl.category === 'ENTREPRISE';
+    const clPhone = (cl.telephone || '').trim();
+    const clName = (cl.clientName || '').trim();
 
     // 1. Déclaration Mensuelle (DM) - Tous les mois
     const dmDueDay = isEntreprise ? (config.dueDayEntreprise || 28) : (config.dueDayPhysique || 15);
@@ -733,7 +755,7 @@ function syncCycleForActiveDate() {
     dmSendTarget.setDate(dmSendTarget.getDate() - daysBefore);
     const dmSendDate = formatDate(dmSendTarget);
 
-    const hasDm = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'DECLARATION_MENSUELLE' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+    const hasDm = clients.some(c => ((clPhone && c.telephone === clPhone) || c.clientName === clName) && c.reminderType === 'DECLARATION_MENSUELLE' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
     if (!hasDm) {
       clients.push({
         id: Date.now() + Math.floor(Math.random() * 10000),
@@ -761,7 +783,7 @@ function syncCycleForActiveDate() {
       cnssSendTarget.setDate(cnssSendTarget.getDate() - daysBefore);
       const cnssSendDate = formatDate(cnssSendTarget);
 
-      const hasCnss = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'CNSS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+      const hasCnss = clients.some(c => ((clPhone && c.telephone === clPhone) || c.clientName === clName) && c.reminderType === 'CNSS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
       if (!hasCnss) {
         clients.push({
           id: Date.now() + Math.floor(Math.random() * 10000),
@@ -790,7 +812,7 @@ function syncCycleForActiveDate() {
       apSendTarget.setDate(apSendTarget.getDate() - daysBefore);
       const apSendDate = formatDate(apSendTarget);
 
-      const hasAp = clients.some(c => (c.telephone === cl.telephone || c.clientName === cl.clientName) && c.reminderType === 'ACOMPTES_PROVISIONNELS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
+      const hasAp = clients.some(c => ((clPhone && c.telephone === clPhone) || c.clientName === clName) && c.reminderType === 'ACOMPTES_PROVISIONNELS' && (c.dueDate && c.dueDate.startsWith(yearMonthPrefix)));
       if (!hasAp) {
         clients.push({
           id: Date.now() + Math.floor(Math.random() * 10000),
@@ -822,7 +844,7 @@ function getActiveReminders() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
 
-  return clients.filter(c => {
+  const rawActive = clients.filter(c => {
     let itemYear = currentYear;
     let itemMonth = currentMonth;
     if (c.dueDate) {
@@ -845,6 +867,17 @@ function getActiveReminders() {
     const isNextMonthDm = !c.smsEnvoye && c.reminderType === 'DECLARATION_MENSUELLE' && isNextMonth;
 
     return isCurrentCycle || isNextMonthDm;
+  });
+
+  // Déduplication absolue pour l'affichage
+  const seenUi = new Set();
+  return rawActive.filter(it => {
+    const mKey = it.dueDate ? it.dueDate.substring(0, 7) : '';
+    const idKey = (it.telephone || it.clientName || '').trim().toLowerCase();
+    const key = `${idKey}|${it.reminderType}|${mKey}`;
+    if (seenUi.has(key)) return false;
+    seenUi.add(key);
+    return true;
   });
 }
 
