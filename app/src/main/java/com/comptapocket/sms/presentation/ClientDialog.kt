@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.comptapocket.sms.simulation.SimulationDateManager
 import com.comptapocket.sms.data.local.ClientCategory
 import com.comptapocket.sms.data.local.ClientReminderEntity
 import com.comptapocket.sms.data.local.ReminderType
@@ -357,7 +358,7 @@ fun ClientDialog(
                         readOnly = true,
                         trailingIcon = {
                             IconButton(onClick = {
-                                val cal = Calendar.getInstance()
+                                val cal = SimulationDateManager.getTodayCalendar()
                                 DatePickerDialog(
                                     context,
                                     { _, year, month, day ->
@@ -390,7 +391,7 @@ fun ClientDialog(
                             readOnly = true,
                             trailingIcon = {
                                 IconButton(onClick = {
-                                    val cal = Calendar.getInstance()
+                                    val cal = SimulationDateManager.getTodayCalendar()
                                     DatePickerDialog(
                                         context,
                                         { _, year, month, day ->

@@ -32,6 +32,15 @@ let searchQuery = '';
 let dbCategoryFilter = 'ALL';
 let dbSearchQuery = '';
 let batchMode = 'EXACT';
+let simulatedDate = localStorage.getItem('comptapocket_simulated_date') || null;
+
+function getTodayDate() {
+  if (simulatedDate) {
+    const parts = simulatedDate.split('-');
+    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 9, 0, 0);
+  }
+  return new Date();
+}
 
 // --- Initialisation au chargement ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -41,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderTable();
   renderDatabaseTable();
   updateStats();
+  updateSimulationUI();
   registerSW();
 
   // Recherche dans les rappels
@@ -83,6 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnOpenAbout = document.getElementById('btn-open-about');
   if (btnOpenAbout) {
     btnOpenAbout.addEventListener('click', openAboutModal);
+  }
+  const btnOpenSim = document.getElementById('btn-open-simulation');
+  if (btnOpenSim) {
+    btnOpenSim.addEventListener('click', openSimulationModal);
   }
 });
 
@@ -229,7 +243,7 @@ function syncClientsToDatabase() {
 
 // --- Calculs de Dates & Automatisations ---
 function computeInitialSchedule(category, type) {
-  const d = new Date();
+  const d = getTodayDate();
   const year = d.getFullYear();
   const month = d.getMonth();
   const todayStr = formatDate(d);
@@ -693,7 +707,7 @@ function onTypeFilterChanged(type) {
 }
 
 function getActiveReminders() {
-  const now = new Date();
+  const now = getTodayDate();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
 
@@ -1334,19 +1348,150 @@ async function checkGitHubUpdate() {
     const res = await fetch('https://raw.githubusercontent.com/bkhmondocteur/comptapocket-sms/main/version.json', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (data.versionName && data.versionName !== '1.0.0') {
+      if (data.versionName && data.versionName !== '1.0.1') {
         statusBox.innerHTML = `🚀 <strong>Nouvelle version v${data.versionName} disponible !</strong><br><small style="color:#64748b;">${data.changelog ? data.changelog.replace(/\n/g, '<br>') : ''}</small>`;
       } else {
-        statusBox.innerHTML = '✅ <strong>Votre application est parfaitement à jour (v1.0.0).</strong>';
+        statusBox.innerHTML = '✅ <strong>Votre application est parfaitement à jour (v1.0.1).</strong>';
       }
     } else {
-      statusBox.innerHTML = '✅ Votre application est à jour (v1.0.0).';
+      statusBox.innerHTML = '✅ Votre application est à jour (v1.0.1).';
     }
   } catch (err) {
     statusBox.innerHTML = 'ℹ️ Impossible de joindre GitHub ou connexion hors-ligne.';
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// --- Mode Test & Simulation de Date ---
+function updateSimulationUI() {
+  const banner = document.getElementById('simulation-banner');
+  const title = document.getElementById('sim-banner-title');
+  const subtitle = document.getElementById('sim-banner-subtitle');
+  const resetBtn = document.getElementById('btn-reset-sim');
+  const modalStatus = document.getElementById('sim-modal-status');
+  const modalDisplay = document.getElementById('sim-modal-display-date');
+  const inputDate = document.getElementById('sim-input-date');
+
+  const d = getTodayDate();
+  const dateFormatted = formatDate(d);
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const displayFormatted = d.toLocaleDateString('fr-FR', options);
+
+  if (inputDate) inputDate.value = dateFormatted;
+
+  if (simulatedDate) {
+    if (banner) {
+      banner.style.background = '#fff7ed';
+      banner.style.borderColor = '#fdba74';
+    }
+    if (title) title.innerText = `🧪 Simulation Active : ${displayFormatted}`;
+    if (subtitle) subtitle.innerText = "Date virtuelle en vigueur pour toutes les échéances (DM, CNSS, AP).";
+    if (resetBtn) resetBtn.style.display = 'inline-block';
+    if (modalStatus) {
+      modalStatus.innerText = "⚠️ SIMULATION DE DATE ACTIVE";
+      modalStatus.style.color = "#ea580c";
+    }
+    if (modalDisplay) {
+      modalDisplay.innerText = displayFormatted;
+      modalDisplay.style.color = "#c2410c";
+    }
+  } else {
+    if (banner) {
+      banner.style.background = '#f0fdf4';
+      banner.style.borderColor = '#bbf7d0';
+    }
+    if (title) title.innerText = `📅 Date Réelle : ${displayFormatted}`;
+    if (subtitle) subtitle.innerText = "Mode test : cliquez pour simuler une autre date et tester les échéances.";
+    if (resetBtn) resetBtn.style.display = 'none';
+    if (modalStatus) {
+      modalStatus.innerText = "✅ DATE RÉELLE DU SYSTÈME";
+      modalStatus.style.color = "#059669";
+    }
+    if (modalDisplay) {
+      modalDisplay.innerText = displayFormatted;
+      modalDisplay.style.color = "#166534";
+    }
+  }
+}
+
+function openSimulationModal() {
+  updateSimulationUI();
+  const modal = document.getElementById('simulation-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeSimulationModal() {
+  const modal = document.getElementById('simulation-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function applyCustomSimDate() {
+  const input = document.getElementById('sim-input-date');
+  if (input && input.value) {
+    simulatedDate = input.value;
+    localStorage.setItem('comptapocket_simulated_date', simulatedDate);
+    updateSimulationUI();
+    renderTable();
+    updateStats();
+    initFormDates();
+    closeSimulationModal();
+  }
+}
+
+function shiftSimDays(days) {
+  const d = getTodayDate();
+  d.setDate(d.getDate() + days);
+  simulatedDate = formatDate(d);
+  localStorage.setItem('comptapocket_simulated_date', simulatedDate);
+  updateSimulationUI();
+  renderTable();
+  updateStats();
+  initFormDates();
+}
+
+function shiftSimMonths(months) {
+  const d = getTodayDate();
+  d.setMonth(d.getMonth() + months);
+  simulatedDate = formatDate(d);
+  localStorage.setItem('comptapocket_simulated_date', simulatedDate);
+  updateSimulationUI();
+  renderTable();
+  updateStats();
+  initFormDates();
+}
+
+function setSimSpecificDay(day) {
+  const d = getTodayDate();
+  d.setDate(day);
+  simulatedDate = formatDate(d);
+  localStorage.setItem('comptapocket_simulated_date', simulatedDate);
+  updateSimulationUI();
+  renderTable();
+  updateStats();
+  initFormDates();
+}
+
+function setSimKeyDate(monthIndex, day) {
+  const d = getTodayDate();
+  d.setMonth(monthIndex);
+  d.setDate(day);
+  simulatedDate = formatDate(d);
+  localStorage.setItem('comptapocket_simulated_date', simulatedDate);
+  updateSimulationUI();
+  renderTable();
+  updateStats();
+  initFormDates();
+}
+
+function resetSimulationDate() {
+  simulatedDate = null;
+  localStorage.removeItem('comptapocket_simulated_date');
+  updateSimulationUI();
+  renderTable();
+  updateStats();
+  initFormDates();
+  closeSimulationModal();
 }
 
 // --- Service Worker ---

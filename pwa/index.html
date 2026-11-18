@@ -32,6 +32,9 @@
         <button id="btn-open-settings" class="btn btn-sm btn-secondary" title="Paramètres du Cabinet">
           ⚙️ Réglages
         </button>
+        <button id="btn-open-simulation" class="btn btn-sm btn-secondary" title="Mode Test & Simulation de Date" style="border:1px solid #f97316; color:#ea580c; background:#fff7ed; font-weight:600;">
+          🧪 Simulation
+        </button>
         <button id="btn-open-about" class="btn btn-sm btn-secondary" title="À propos de ComptaPocket SMS" style="border:1px solid #94a3b8;">
           ℹ️ À propos
         </button>
@@ -52,6 +55,25 @@
     <!-- VUE 1 : ÉCHÉANCES & RAPPELS SMS (Tableau de bord & Envois) -->
     <!-- ======================================================== -->
     <div id="view-reminders">
+      <!-- Bandeau Simulation de Date -->
+      <div id="simulation-banner" style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:0.6rem 1rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <span style="font-size:1.3rem;">🧪</span>
+          <div>
+            <strong id="sim-banner-title" style="color:#c2410c; font-size:0.9rem;">Mode Simulation : Date réelle active</strong>
+            <div id="sim-banner-subtitle" style="font-size:0.78rem; color:#9a3412;">Cliquez pour simuler une autre date (tester DM, CNSS, AP et transitions de mois).</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="button" class="btn btn-sm btn-outline" onclick="openSimulationModal()" style="border:1px solid #ea580c; color:#ea580c; background:white; font-size:0.8rem; font-weight:600;">
+            Changer Date
+          </button>
+          <button id="btn-reset-sim" type="button" class="btn btn-sm btn-secondary" onclick="resetSimulationDate()" style="display:none; font-size:0.8rem; background:#fee2e2; color:#b91c1c; font-weight:600;">
+            Réinitialiser
+          </button>
+        </div>
+      </div>
+
       <!-- Overview Stats -->
       <section class="stats-grid">
         <div class="stat-card">
@@ -555,6 +577,64 @@
     </div>
   </div>
 
+  <!-- Modal Mode Simulation de Date -->
+  <div id="simulation-modal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div class="modal-content" style="max-width:480px; width:92%; background:white; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+      <div class="modal-header" style="background:#fff7ed; border-bottom:1px solid #fed7aa; padding:1rem 1.25rem; display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0; font-size:1.1rem; color:#9a3412;">🧪 Mode Test & Simulation de Date</h3>
+        <button class="modal-close" onclick="closeSimulationModal()" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:#9a3412;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem;">
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:0.75rem; text-align:center; margin-bottom:1rem;">
+          <div id="sim-modal-status" style="font-weight:bold; font-size:0.85rem; color:#059669;">DATE RÉELLE DU SYSTÈME</div>
+          <div id="sim-modal-display-date" style="font-size:1.2rem; font-weight:800; color:#0f172a; margin-top:0.25rem;">--</div>
+        </div>
+
+        <p style="font-size:0.82rem; color:#64748b; margin-bottom:0.8rem;">
+          Modifiez la date du jour virtuelle pour tester le comportement de l'application selon la catégorie du client et les échéances (DM, CNSS, AP).
+        </p>
+
+        <div class="form-group">
+          <label for="sim-input-date" style="font-size:0.85rem; font-weight:600;">Sélectionner une date précise :</label>
+          <div style="display:flex; gap:0.5rem;">
+            <input type="date" id="sim-input-date" class="form-control" style="flex:1;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="applyCustomSimDate()">Appliquer</button>
+          </div>
+        </div>
+
+        <div style="margin-top:1rem;">
+          <label style="font-size:0.85rem; font-weight:600; display:block; margin-bottom:0.4rem;">Sauts temporels rapides :</label>
+          <div style="display:flex; gap:0.4rem; margin-bottom:0.5rem;">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="shiftSimDays(-1)" style="flex:1;">-1 jour</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="shiftSimDays(1)" style="flex:1;">+1 jour</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="shiftSimMonths(1)" style="flex:1;">+1 mois</button>
+          </div>
+        </div>
+
+        <div style="margin-top:0.8rem;">
+          <label style="font-size:0.85rem; font-weight:600; display:block; margin-bottom:0.4rem;">Échéances clés à tester :</label>
+          <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimSpecificDay(15)" style="font-size:0.75rem; border:1px solid #cbd5e1;">15 du mois (DM Physiques)</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimSpecificDay(28)" style="font-size:0.75rem; border:1px solid #cbd5e1;">28 du mois (DM Sociétés)</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimKeyDate(0, 15)" style="font-size:0.75rem; border:1px solid #cbd5e1;">15 Janvier (CNSS)</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimKeyDate(3, 15)" style="font-size:0.75rem; border:1px solid #cbd5e1;">15 Avril (CNSS)</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimKeyDate(5, 28)" style="font-size:0.75rem; border:1px solid #cbd5e1;">28 Juin (AP 1)</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setSimKeyDate(8, 28)" style="font-size:0.75rem; border:1px solid #cbd5e1;">28 Sept (AP 2)</button>
+          </div>
+        </div>
+
+        <div style="margin-top:1.2rem; text-align:center;">
+          <button type="button" class="btn btn-sm btn-secondary" onclick="resetSimulationDate()" style="color:#b91c1c; border:1px solid #fecaca; background:#fef2f2; width:100%;">
+            🔄 Revenir à la date réelle du système
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:0.75rem 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeSimulationModal()" style="width:100%;">Fermer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal À propos & Mises à jour -->
   <div id="about-modal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
     <div class="modal-content" style="max-width:480px; width:90%; background:white; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.2); text-align:center;">
@@ -566,7 +646,7 @@
         <img src="favicon.png" alt="Logo" style="width:72px; height:72px; border-radius:50%; margin-bottom:0.75rem; box-shadow:0 4px 10px rgba(0,0,0,0.15);">
         <h2 style="font-size:1.3rem; margin:0.2rem 0; color:#0d47a1;">ComptaPocket SMS</h2>
         <span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; padding:0.25rem 0.6rem; border-radius:20px; font-size:0.8rem;">
-          Version 1.0.0 (Build 1)
+          Version 1.0.1 (Build 2) • Mode Test & Simulation
         </span>
         <p style="font-size:0.85rem; color:#64748b; margin:0.8rem 0; line-height:1.4;">
           Solution d'automatisation des déclarations mensuelles (DM), cotisations CNSS et acomptes provisionnels (AP) pour cabinets de comptabilité et d'expertise comptable.
@@ -580,8 +660,8 @@
         </div>
 
         <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:1rem;">
-          <a href="https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.0/ComptaPocket-SMS.apk" class="btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; padding:0.6rem;">
-            📥 Télécharger l'application Android (APK)
+          <a href="https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.1/ComptaPocket-SMS.apk" class="btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; padding:0.6rem;">
+            📥 Télécharger l'application Android (APK v1.0.1)
           </a>
           <a href="https://github.com/bkhmondocteur/comptapocket-sms" target="_blank" class="btn btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; border:1px solid #cbd5e1; padding:0.6rem;">
             🌐 Consulter le projet GitHub

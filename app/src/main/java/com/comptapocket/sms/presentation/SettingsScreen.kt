@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.comptapocket.sms.simulation.SimulationDateManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,6 +41,7 @@ fun SettingsScreen(
     var cabinetPhone by remember { mutableStateOf(prefs.getString("cabinet_phone", "") ?: "") }
     var serverIp by remember { mutableStateOf(prefs.getString("server_ip", "") ?: "") }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showSimulationDialog by remember { mutableStateOf(false) }
 
     // Option automatisation de l'envoi
     var autoSendEnabled by remember { mutableStateOf(prefs.getBoolean("auto_send_enabled", true)) }
@@ -394,6 +396,38 @@ fun SettingsScreen(
 
             Divider()
 
+            // Mode Test & Simulation de Date
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (SimulationDateManager.isSimulationActive()) Color(0xFFFFF3E0) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🧪", fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Mode Test & Simulation de Date", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Date active : ${SimulationDateManager.getTodayDisplayFormatted()} (${if (SimulationDateManager.isSimulationActive()) "Simulation active" else "Date réelle"}).\nPermet de changer la date du jour pour simuler et tester le comportement de toutes les échéances (DM, CNSS, AP, bascule de mois).",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { showSimulationDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = if (SimulationDateManager.isSimulationActive()) ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)) else ButtonDefaults.buttonColors()
+                    ) {
+                        Text("🧪 Ouvrir le Simulateur de Date")
+                    }
+                }
+            }
+
+            Divider()
+
             // Modèles SMS personnalisables
             Text("Modèles des SMS (Templates)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
@@ -472,5 +506,9 @@ fun SettingsScreen(
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showSimulationDialog) {
+        SimulationDateDialog(onDismiss = { showSimulationDialog = false })
     }
 }

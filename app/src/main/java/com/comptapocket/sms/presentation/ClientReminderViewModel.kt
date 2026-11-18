@@ -10,6 +10,7 @@ import com.comptapocket.sms.data.local.ClientEntity
 import com.comptapocket.sms.data.local.ClientReminderEntity
 import com.comptapocket.sms.data.local.ReminderType
 import com.comptapocket.sms.network.RetrofitClient
+import com.comptapocket.sms.simulation.SimulationDateManager
 import com.comptapocket.sms.sms.SmsSender
 import com.comptapocket.sms.worker.SyncService
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,10 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
     private val smsSender = SmsSender(application)
     private val prefs = application.getSharedPreferences("comptapocket_prefs", Context.MODE_PRIVATE)
 
+    init {
+        SimulationDateManager.init(application)
+    }
+
     // ==========================================
     // 1. GESTION DE LA LISTE DES RAPPELS SMS
     // ==========================================
@@ -57,10 +62,14 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
     private val rawReminders = dao.getAllReminders()
 
     // 1. Rappels actifs du cycle :
+    // - Réagit instantanément à tout changement de date simulée ou réelle.
     // - Dès que le nouveau mois commence, les SMS envoyés du mois précédent sont enlevés.
     // - Les SMS de CNSS et AP n'apparaissent dès que le mois de l'échéance entre en vigueur.
-    val activeReminders: StateFlow<List<ClientReminderEntity>> = rawReminders.map { list ->
-        val now = Calendar.getInstance()
+    val activeReminders: StateFlow<List<ClientReminderEntity>> = combine(
+        rawReminders,
+        SimulationDateManager.simulatedDateFlow
+    ) { list, _ ->
+        val now = SimulationDateManager.getTodayCalendar()
         val currentYear = now.get(Calendar.YEAR)
         val currentMonth = now.get(Calendar.MONTH) + 1 // 1-12
         val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -302,7 +311,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun computeInitialSchedule(category: String, reminderType: String): ScheduleResult {
-        val today = Calendar.getInstance()
+        val today = SimulationDateManager.getTodayCalendar()
         val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
         val todayDateStr = format.format(today.time)
@@ -320,7 +329,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 val currentDay = today.get(Calendar.DAY_OF_MONTH)
 
                 if (currentDay <= dueDay) {
-                    val cal = Calendar.getInstance()
+                    val cal = today.clone() as Calendar
                     val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
                     cal.set(Calendar.DAY_OF_MONTH, minOf(dueDay, maxDay))
                     val due = format.format(cal.time)
@@ -331,13 +340,13 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         shouldSendImmediately = true
                     )
                 } else {
-                    val cal = Calendar.getInstance()
-                    cal.add(Calendar.MONTH, 1)
+                    val cal = (today.clone() as Calendar).apply {
+                        add(Calendar.MONTH, 1)
+                    }
                     val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
                     cal.set(Calendar.DAY_OF_MONTH, minOf(dueDay, maxDay))
                     val due = format.format(cal.time)
-                    val sendCal = Calendar.getInstance().apply {
-                        time = cal.time
+                    val sendCal = (cal.clone() as Calendar).apply {
                         add(Calendar.DAY_OF_YEAR, -daysBefore)
                     }
                     ScheduleResult(
@@ -487,8 +496,8 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             val cal = Calendar.getInstance()
             cal.time = date
             cal.add(Calendar.DAY_OF_YEAR, -days)
-            if (cal.timeInMillis < System.currentTimeMillis()) {
-                val today = Calendar.getInstance()
+            val today = SimulationDateManager.getTodayCalendar()
+            if (cal.timeInMillis < today.timeInMillis) {
                 return format.format(today.time)
             }
             return format.format(cal.time)
