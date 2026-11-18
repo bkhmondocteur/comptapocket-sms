@@ -20,6 +20,7 @@ import com.comptapocket.sms.data.local.ClientCategory
 import com.comptapocket.sms.data.local.ClientReminderEntity
 import com.comptapocket.sms.data.local.ReminderType
 import com.comptapocket.sms.firebase.FirebaseSyncManager
+import com.comptapocket.sms.simulation.SimulationDateManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -170,16 +171,29 @@ class SmsSender(private val context: Context) {
                                 delay(2500L) // Délai anti-congestion pour l'opérateur
                             } catch (e: Exception) {
                                 Log.e(TAG, "Exception critique lors de l'envoi SMS à $cleanPhone: ${e.message}", e)
-                                showToast("Erreur SMS: ${e.localizedMessage}")
-                                try {
-                                    AppDatabase.getDatabase(context).clientReminderDao().resetSmsStatus(reminder.id)
-                                } catch (_: Exception) {}
+                                if (SimulationDateManager.isSimulationActive()) {
+                                    Log.i(TAG, "Mode simulation actif: validation simulée pour #${reminder.id}")
+                                    onSmsSent(reminder.id)
+                                    showToast("Simulation: SMS validé pour ${reminder.clientName}")
+                                } else {
+                                    showToast("Erreur SMS: ${e.localizedMessage}")
+                                    try {
+                                        AppDatabase.getDatabase(context).clientReminderDao().resetSmsStatus(reminder.id)
+                                    } catch (_: Exception) {}
+                                }
                             }
+                        } else if (SimulationDateManager.isSimulationActive()) {
+                            Log.i(TAG, "Mode simulation actif avec numéro court: validation simulée pour #${reminder.id}")
+                            onSmsSent(reminder.id)
+                            showToast("Simulation: SMS validé pour ${reminder.clientName}")
                         } else {
                             Log.w(TAG, "Numéro invalide: ${reminder.telephone}")
                         }
-                    } else if (emailSuccess) {
+                    } else if (emailSuccess || SimulationDateManager.isSimulationActive()) {
                         onSmsSent(reminder.id)
+                        if (SimulationDateManager.isSimulationActive()) {
+                            showToast("Simulation: Rappel validé pour ${reminder.clientName}")
+                        }
                     }
                 } finally {
                     SmsLock.release(reminder.id)

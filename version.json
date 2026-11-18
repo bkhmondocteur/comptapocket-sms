@@ -1,8 +1,8 @@
 {
-  "versionCode": 5,
-  "versionName": "1.0.4",
+  "versionCode": 6,
+  "versionName": "1.0.5",
   "releaseDate": "2026-11-18",
-  "changelog": "- 👤 Carte Client Unique Tout-en-Un : Regroupement de toutes les déclarations (DM, AP, CNSS) au sein d'une seule et même carte par client\n- 🔄 Conservation intelligente des statuts : le statut Envoyé de la DM reste affiché jusqu'à l'arrivée de la DM du mois suivant ; les statuts Envoyé de l'AP et de la CNSS restent visibles jusqu'à la date d'échéance légale du paiement\n- 🚀 Contournement du blocage d'envoi SMS : intégration Firebase Cloud Messaging (FCM High-Priority push) + Firestore + Vercel Cloud Cron pour réveiller le téléphone et garantir l'envoi même en veille profonde / Doze mode\n- 🛡️ Modem GSM renforcé : WakeLock processeur (3 min), support multi-SIM SubscriptionManager, SmsLock anti-doublon et accusé de réception SmsSentReceiver",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.4/ComptaPocket-SMS.apk",
+  "changelog": "- ⚡ Envoi automatique synchronisé avec la date active (simulée ou réelle) : tout SMS dont la date et l'heure d'envoi programmées sont atteintes ou dépassées est immédiatement envoyé et validé\n- 📅 Règle stricte d'affichage de la DM du mois suivant : la déclaration mensuelle de M+1 n'apparaît JAMAIS tant que la DM du mois en cours n'a pas été envoyée (évite les doublons en attente)\n- 🔄 Transition propre entre les mois : dès l'envoi de la DM du mois en cours, la DM du mois suivant s'affiche en attente ; lors du passage au mois suivant, la DM envoyée du mois précédent s'efface automatiquement\n- 🛠️ Fiabilité du mode simulation : validation intelligente des envois de test même en cas d'absence d'antenne réseau ou d'appareil de test sans SIM",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.5/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }

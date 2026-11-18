@@ -2,6 +2,7 @@ package com.comptapocket.sms.presentation
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.comptapocket.sms.data.local.AppDatabase
@@ -59,6 +60,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             SimulationDateManager.simulatedDateFlow.collect {
                 syncCycleForActiveDate()
+                checkAndAutoSendDueReminders()
             }
         }
     }
@@ -95,6 +97,36 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         val currentYearMonth = String.format("%04d-%02d", currentYear, currentMonth)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
+        // 1. Déterminer pour chaque client si la DM du mois en cours a été envoyée
+        val currentMonthDmSentByClient = mutableMapOf<String, Boolean>()
+        for (item in list) {
+            if (item.reminderType == ReminderType.DECLARATION_MENSUELLE) {
+                var itemYear = currentYear
+                var itemMonth = currentMonth
+                try {
+                    val parsed = dateFormat.parse(item.dueDate) ?: dateFormat.parse(item.sendDate)
+                    if (parsed != null) {
+                        val cal = Calendar.getInstance().apply { time = parsed }
+                        itemYear = cal.get(Calendar.YEAR)
+                        itemMonth = cal.get(Calendar.MONTH) + 1
+                    }
+                } catch (_: Exception) {}
+                val ym = String.format("%04d-%02d", itemYear, itemMonth)
+                if (ym == currentYearMonth) {
+                    val clientKey = if (item.telephone.isNotBlank()) {
+                        item.telephone.replace(Regex("[^0-9+]"), "").trim()
+                    } else {
+                        item.clientName.trim().lowercase()
+                    }
+                    if (item.smsEnvoye) {
+                        currentMonthDmSentByClient[clientKey] = true
+                    } else if (!currentMonthDmSentByClient.containsKey(clientKey)) {
+                        currentMonthDmSentByClient[clientKey] = false
+                    }
+                }
+            }
+        }
+
         list.filter { item ->
             var itemYear = currentYear
             var itemMonth = currentMonth
@@ -112,13 +144,28 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             when (item.reminderType) {
                 ReminderType.DECLARATION_MENSUELLE -> {
                     // Pour la DM :
-                    // Le statut envoyé du mois en cours restera jusqu'à l'apparition du statut en attente du mois prochain.
+                    // 1. La DM du mois en cours (currentYearMonth) est TOUJOURS affichée (en attente ou envoyée).
+                    // 2. La DM du mois suivant (M+1) N'APPARAÎT QUE SI la DM du mois en cours a DÉJÀ ÉTÉ ENVOYÉE.
+                    // 3. Dès que le mois suivant commence, la DM du mois précédent disparaît (car itemYearMonth < currentYearMonth).
                     val isCurrentMonth = (itemYearMonth == currentYearMonth)
                     val isNextMonth = (itemYear == currentYear && itemMonth == currentMonth + 1) ||
                             (currentMonth == 12 && itemYear == currentYear + 1 && itemMonth == 1)
-                    val isNextMonthDm = !item.smsEnvoye && isNextMonth
 
-                    isCurrentMonth || isNextMonthDm
+                    val clientKey = if (item.telephone.isNotBlank()) {
+                        item.telephone.replace(Regex("[^0-9+]"), "").trim()
+                    } else {
+                        item.clientName.trim().lowercase()
+                    }
+
+                    val isCurrentDmSent = currentMonthDmSentByClient[clientKey] == true
+
+                    if (isCurrentMonth) {
+                        true
+                    } else if (isNextMonth) {
+                        !item.smsEnvoye && isCurrentDmSent
+                    } else {
+                        false
+                    }
                 }
                 ReminderType.CNSS -> {
                     // Pour la cotisation CNSS :
@@ -201,7 +248,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 telephone = matchingClient?.telephone ?: firstReminder.telephone,
                 email = matchingClient?.email ?: firstReminder.email,
                 taxId = matchingClient?.taxId ?: firstReminder.taxId,
-                reminders = clientReminders.sortedWith(compareBy({ it.reminderType }, { it.dueDate }))
+                reminders = clientReminders.sortedWith(compareBy({ it.dueDate }, { it.reminderType }))
             )
         }.sortedBy { it.clientName }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -690,7 +737,12 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 if (schedule.shouldSendImmediately && (reminderType == ReminderType.PACK_COMPLET || sendDate.isBlank())) {
                     smsSender.sendReminders(listOf(savedEntity)) { sentId ->
                         launch {
-                            dao.markSmsAsSent(sentId, System.currentTimeMillis())
+                            val markTime = if (SimulationDateManager.isSimulationActive()) {
+                                SimulationDateManager.getTodayCalendar().timeInMillis
+                            } else {
+                                System.currentTimeMillis()
+                            }
+                            dao.markSmsAsSent(sentId, markTime)
                             SyncService.scheduleNextPeriodicReminder(getApplication(), savedEntity)
                         }
                     }
@@ -880,6 +932,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
             syncAllUnsentToCloud()
+            checkAndAutoSendDueReminders()
         }
     }
 
@@ -1177,7 +1230,12 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch(Dispatchers.IO) {
             smsSender.sendReminders(reminders) { id ->
                 launch {
-                    dao.markSmsAsSent(id, System.currentTimeMillis())
+                    val markTime = if (SimulationDateManager.isSimulationActive()) {
+                        SimulationDateManager.getTodayCalendar().timeInMillis
+                    } else {
+                        System.currentTimeMillis()
+                    }
+                    dao.markSmsAsSent(id, markTime)
                     val sentItem = reminders.find { it.id == id }
                     if (sentItem != null) {
                         SyncService.scheduleNextPeriodicReminder(getApplication(), sentItem)
@@ -1186,6 +1244,57 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             }
             withContext(Dispatchers.Main) {
                 onComplete()
+            }
+        }
+    }
+
+    /**
+     * Vérification et déclenchement automatique des envois pour tous les rappels échus
+     * selon la date active (simulée ou réelle).
+     */
+    fun checkAndAutoSendDueReminders() {
+        val autoSendEnabled = prefs.getBoolean("auto_send_enabled", true)
+        if (!autoSendEnabled) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val unsent = dao.getUnsentReminders()
+                val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                val nowCal = SimulationDateManager.getTodayCalendar()
+                val nowMillis = if (SimulationDateManager.isSimulationActive()) {
+                    nowCal.timeInMillis
+                } else {
+                    System.currentTimeMillis()
+                }
+
+                val dueToSend = unsent.filter { item ->
+                    try {
+                        val parsed = format.parse("${item.sendDate} ${item.sendTime}")
+                        parsed != null && parsed.time <= nowMillis
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+
+                if (dueToSend.isNotEmpty()) {
+                    Log.d("ClientReminderVM", "Envoi automatique de ${dueToSend.size} rappels échus (date effective : ${format.format(nowCal.time)})")
+                    smsSender.sendReminders(dueToSend) { id ->
+                        launch {
+                            val markTime = if (SimulationDateManager.isSimulationActive()) {
+                                SimulationDateManager.getTodayCalendar().timeInMillis
+                            } else {
+                                System.currentTimeMillis()
+                            }
+                            dao.markSmsAsSent(id, markTime)
+                            val sentItem = dueToSend.find { it.id == id }
+                            if (sentItem != null) {
+                                SyncService.scheduleNextPeriodicReminder(getApplication(), sentItem)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ClientReminderVM", "Erreur vérification envois automatiques", e)
             }
         }
     }

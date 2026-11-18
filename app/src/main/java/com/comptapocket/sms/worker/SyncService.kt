@@ -19,6 +19,7 @@ import com.comptapocket.sms.data.local.ClientCategory
 import com.comptapocket.sms.data.local.ClientReminderEntity
 import com.comptapocket.sms.data.local.ReminderType
 import com.comptapocket.sms.network.RetrofitClient
+import com.comptapocket.sms.simulation.SimulationDateManager
 import com.comptapocket.sms.sms.SmsSender
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,7 +82,11 @@ class SyncService : Service() {
                 val dao = AppDatabase.getDatabase(applicationContext).clientReminderDao()
                 val unsent = dao.getUnsentReminders()
                 val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                val now = System.currentTimeMillis()
+                val now = if (SimulationDateManager.isSimulationActive()) {
+                    SimulationDateManager.getTodayCalendar().timeInMillis
+                } else {
+                    System.currentTimeMillis()
+                }
 
                 val dueToSend = unsent.filter { item ->
                     try {
@@ -96,7 +101,12 @@ class SyncService : Service() {
                     Log.d("SyncService", "Envoi automatique de ${dueToSend.size} SMS échus")
                     val smsSender = SmsSender(applicationContext)
                     smsSender.sendReminders(dueToSend) { id ->
-                        dao.markSmsAsSent(id, System.currentTimeMillis())
+                        val markTime = if (SimulationDateManager.isSimulationActive()) {
+                            SimulationDateManager.getTodayCalendar().timeInMillis
+                        } else {
+                            System.currentTimeMillis()
+                        }
+                        dao.markSmsAsSent(id, markTime)
                         val sentItem = dueToSend.find { it.id == id }
                         if (sentItem != null) {
                             scope.launch {
