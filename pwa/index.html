@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ComptaPocket SMS - Rappels Déclarations & Cotisations</title>
+  <meta name="description" content="Application de gestion des échéances fiscales et cotisations CNSS pour bureaux de comptables. Envoi automatique de SMS de rappel aux dates légales fixées.">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d47a1">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <img src="favicon.png" alt="Logo ComptaPocket SMS" class="header-logo">
+        <div>
+          <h1>ComptaPocket SMS</h1>
+          <p id="header-cabinet-name">Bureau de Comptabilité • Échéances Fiscales & Sociales</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-batch-modal" class="btn btn-sm btn-primary" title="Modifier dates d'envoi collectivement">
+          📅 Dates Groupées
+        </button>
+        <button id="btn-send-all" class="btn btn-sm btn-secondary" title="Envoyer tous les SMS en attente">
+          🚀 Envoyer Tout
+        </button>
+        <button id="btn-open-settings" class="btn btn-sm btn-secondary" title="Paramètres du Cabinet">
+          ⚙️ Réglages
+        </button>
+        <button id="btn-open-about" class="btn btn-sm btn-secondary" title="À propos de ComptaPocket SMS" style="border:1px solid #94a3b8;">
+          ℹ️ À propos
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs Principaux -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" id="tab-btn-reminders" onclick="switchMainTab('reminders')">
+        📋 Échéances & Rappels SMS
+      </button>
+      <button class="nav-tab" id="tab-btn-database" onclick="switchMainTab('database')">
+        👥 Base de données Clients (<span id="tab-client-count">0</span>)
+      </button>
+    </nav>
+
+    <!-- ======================================================== -->
+    <!-- VUE 1 : ÉCHÉANCES & RAPPELS SMS (Tableau de bord & Envois) -->
+    <!-- ======================================================== -->
+    <div id="view-reminders">
+      <!-- Overview Stats -->
+      <section class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon blue">🏢</div>
+          <div class="stat-data">
+            <h3 id="stat-companies">0</h3>
+            <p>Sociétés (Entreprises)</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon purple">👤</div>
+          <div class="stat-data">
+            <h3 id="stat-persons">0</h3>
+            <p>Personnes Physiques</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon orange">⏳</div>
+          <div class="stat-data">
+            <h3 id="stat-pending">0</h3>
+            <p>En Attente</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon green">✅</div>
+          <div class="stat-data">
+            <h3 id="stat-sent">0</h3>
+            <p>Envoyés</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- App Main Grid -->
+      <div class="app-grid">
+        <!-- Left: Form Card -->
+        <section class="card">
+          <h2 class="card-title" id="form-title">➕ Nouveau Client & Rappel</h2>
+
+          <!-- Badge Automatisation -->
+          <div class="auto-dates-badge" style="background:#e0f2fe; color:#0369a1; padding:0.6rem 0.8rem; border-radius:8px; font-size:0.82rem; margin-bottom:1rem; border-left:4px solid #0284c7;">
+            ✨ <strong>Dates & Envois automatisés</strong> selon vos réglages.<br>
+            <span id="auto-dates-summary">Date limite & envoi calculés automatiquement selon la catégorie.</span>
+          </div>
+
+          <form id="reminder-form">
+            <input type="hidden" id="edit-id" value="">
+
+            <!-- Catégorie Fiscale -->
+            <div class="form-group">
+              <label>Catégorie Fiscale du client * :</label>
+              <div class="category-toggle">
+                <button type="button" class="category-btn active" id="btn-cat-entreprise" onclick="selectCategory('ENTREPRISE')">
+                  🏢 Entreprise
+                </button>
+                <button type="button" class="category-btn" id="btn-cat-physique" onclick="selectCategory('PERSONNE_PHYSIQUE')">
+                  👤 Personne physique
+                </button>
+              </div>
+              <input type="hidden" id="client-category" value="ENTREPRISE">
+            </div>
+
+            <!-- Nom Client -->
+            <div class="form-group">
+              <label for="client-name" id="label-client-name">Raison Sociale / Nom Société * :</label>
+              <input type="text" id="client-name" class="form-control" placeholder="Ex: STE NOUVELLE DISTRIBUTION" required>
+            </div>
+
+            <!-- Téléphone Mobile & Matricule -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="client-phone">Téléphone Mobile (SMS) * :</label>
+                <input type="tel" id="client-phone" class="form-control" placeholder="98123456" required>
+              </div>
+              <div class="form-group">
+                <label for="client-taxid">Matricule Fiscal :</label>
+                <input type="text" id="client-taxid" class="form-control" placeholder="1234567/A/M/000">
+              </div>
+            </div>
+
+            <!-- Type d'échéance -->
+            <div class="form-group">
+              <label for="reminder-type">Type d'Échéance / SMS à programmer * :</label>
+              <select id="reminder-type" class="form-control" onchange="onTypeOrCategoryChanged()">
+                <option value="DECLARATION_MENSUELLE" selected>📄 Déclaration mensuelle (TVA, RS...)</option>
+                <option value="CNSS">🛡️ Cotisations CNSS (Trimestrielle)</option>
+                <option value="ACOMPTES_PROVISIONNELS">💰 Acomptes provisionnels</option>
+                <option value="PACK_COMPLET">⭐ Pack Complet (Mensuelle + CNSS + Acomptes)</option>
+                <option value="AUTRE">📌 Autre échéance / rappel</option>
+              </select>
+            </div>
+
+            <!-- Personnalisation manuelle pliable (Optionnel) -->
+            <details id="manual-options-details" style="margin-top:0.75rem; border:1px dashed var(--border); padding:0.6rem 0.8rem; border-radius:8px;">
+              <summary style="font-size:0.85rem; font-weight:600; color:var(--primary); cursor:pointer;">
+                ⚙️ Personnalisation manuelle (Optionnel)
+              </summary>
+
+              <!-- Date limite légale & Date d'envoi SMS -->
+              <div class="form-row" style="margin-top:0.6rem;">
+                <div class="form-group">
+                  <label for="due-date">Date Limite Légale :</label>
+                  <input type="date" id="due-date" class="form-control" onchange="onDueDateChanged()">
+                </div>
+                <div class="form-group">
+                  <label for="send-date">Date d'Envoi SMS :</label>
+                  <input type="date" id="send-date" class="form-control">
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="send-time">Heure d'Envoi :</label>
+                  <input type="time" id="send-time" class="form-control" value="09:00">
+                </div>
+                <div class="form-group">
+                  <label for="client-email">Email (optionnel) :</label>
+                  <input type="email" id="client-email" class="form-control" placeholder="client@domaine.com">
+                </div>
+              </div>
+
+              <!-- SMS Preview -->
+              <div class="form-group" style="margin-top:0.5rem;">
+                <div class="sms-preview-card">
+                  <div class="sms-preview-header">
+                    <span>Aperçu du SMS</span>
+                    <span id="sms-char-count">0 caractères</span>
+                  </div>
+                  <textarea id="sms-text" class="form-control" rows="3" style="background:#1e293b; color:#fff; border:none; resize:vertical; font-size:0.85rem;"></textarea>
+                </div>
+              </div>
+            </details>
+
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+              <button type="submit" id="btn-submit" class="btn btn-primary" style="flex: 2;">
+                💾 Enregistrer le Client & Rappel
+              </button>
+              <button type="button" id="btn-reset-form" class="btn btn-secondary" style="flex: 1; color: var(--text-main); background: #e2e8f0;">
+                Annuler
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Right: Clients List & Table -->
+        <section class="card">
+          <div class="table-toolbar">
+            <input type="text" id="search-input" class="form-control" placeholder="🔍 Rechercher client, tél, matricule..." style="max-width: 250px;">
+
+            <!-- Menus Déroulants : Catégorie & Type de Déclaration -->
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <label for="filter-category" style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Catégorie :</label>
+                <select id="filter-category" class="form-control" style="padding:0.45rem 0.75rem; font-size:0.85rem; font-weight:600; min-width:180px;" onchange="onCategoryFilterChanged(this.value)">
+                  <option value="ALL" selected>👥 Toutes</option>
+                  <option value="ENTREPRISE">🏢 Sociétés</option>
+                  <option value="PERSONNE_PHYSIQUE">👤 Pers. physiques</option>
+                </select>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <label for="filter-type" style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Type de SMS :</label>
+                <select id="filter-type" class="form-control" style="padding:0.45rem 0.75rem; font-size:0.85rem; font-weight:600; min-width:210px;" onchange="onTypeFilterChanged(this.value)">
+                  <option value="ALL" selected>📑 Tous</option>
+                  <option value="DECLARATION_MENSUELLE">📄 DM - Déclaration mensuelle</option>
+                  <option value="CNSS">🛡️ Cotisations CNSS</option>
+                  <option value="ACOMPTES_PROVISIONNELS">💰 AP - Acompte provisionnel</option>
+                  <option value="AUTRE">📌 Autre</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="clients-table">
+              <thead>
+                <tr>
+                  <th>Client / Contact</th>
+                  <th>Catégorie</th>
+                  <th>Type du SMS</th>
+                  <th>Date Limite Légale</th>
+                  <th>Date d'Envoi SMS</th>
+                  <th>Mention du Statut</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="clients-table-body">
+                <!-- Dynamically populated via app.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VUE 2 : BASE DE DONNÉES DES CLIENTS (Consultation & Édition) -->
+    <!-- ======================================================== -->
+    <div id="view-database" style="display: none;">
+      <!-- Stats Base Clients -->
+      <section class="stats-grid" style="margin-bottom: 1.25rem;">
+        <div class="stat-card">
+          <div class="stat-icon blue">👥</div>
+          <div class="stat-data">
+            <h3 id="db-stat-total">0</h3>
+            <p>Total Clients Enregistrés</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">🏢</div>
+          <div class="stat-data">
+            <h3 id="db-stat-companies">0</h3>
+            <p>Sociétés / Entreprises</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">👤</div>
+          <div class="stat-data">
+            <h3 id="db-stat-persons">0</h3>
+            <p>Personnes Physiques</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Barre d'outils et recherche -->
+      <section class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; flex: 1;">
+            <input type="text" id="db-search-input" class="form-control" placeholder="🔍 Rechercher dans la base (Nom, téléphone, matricule fiscal, email...)" style="max-width: 380px;">
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-sm btn-secondary active" id="btn-db-filter-all" onclick="setDbCategoryFilter('ALL')">Tous</button>
+              <button class="btn btn-sm btn-secondary" id="btn-db-filter-ent" onclick="setDbCategoryFilter('ENTREPRISE')">🏢 Sociétés</button>
+              <button class="btn btn-sm btn-secondary" id="btn-db-filter-phy" onclick="setDbCategoryFilter('PERSONNE_PHYSIQUE')">👤 Personnes physiques</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddClientModal()">
+            ➕ Nouveau Client dans la Base
+          </button>
+        </div>
+
+        <!-- Table de la base de données clients -->
+        <div class="table-container">
+          <table class="client-db-table">
+            <thead>
+              <tr>
+                <th>Raison Sociale / Nom</th>
+                <th>Catégorie</th>
+                <th>Téléphone Mobile</th>
+                <th>Matricule Fiscal</th>
+                <th>Email</th>
+                <th>Échéances & Rappels Associés (Type SMS & Mention)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="db-table-body">
+              <!-- Dynamically populated via app.js -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Modal: Modification Collective des Dates -->
+  <div id="batch-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📅 Modification Collective des Dates d'Envoi</h3>
+        <button onclick="closeBatchModal()" style="background:none; border:none; font-size:1.3rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Modifiez simultanément la date d'envoi du SMS pour tous vos clients ou selon leur catégorie fiscale.
+        </p>
+
+        <div class="form-group">
+          <label>1. Catégorie ciblée :</label>
+          <div style="display: flex; gap: 1rem; margin-top: 0.4rem;">
+            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+              <input type="radio" name="batch-target" value="ALL" checked>
+              <strong>Tous les clients</strong>
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+              <input type="radio" name="batch-target" value="ENTREPRISE">
+              🏢 Sociétés uniquement
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+              <input type="radio" name="batch-target" value="PERSONNE_PHYSIQUE">
+              👤 Personnes uniquement
+            </label>
+          </div>
+        </div>
+
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+
+        <div class="form-group">
+          <label>2. Méthode d'ajustement :</label>
+          <div class="category-toggle">
+            <button type="button" class="category-btn active" id="btn-batch-mode-exact" onclick="setBatchMode('EXACT')">Date Fixe</button>
+            <button type="button" class="category-btn" id="btn-batch-mode-shift" onclick="setBatchMode('SHIFT')">Décaler (+/- Jours)</button>
+          </div>
+        </div>
+
+        <div id="batch-exact-fields" class="form-row">
+          <div class="form-group">
+            <label for="batch-date">Nouvelle Date d'Envoi :</label>
+            <input type="date" id="batch-date" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="batch-time">Heure d'Envoi :</label>
+            <input type="time" id="batch-time" class="form-control" value="09:00">
+          </div>
+        </div>
+
+        <div id="batch-shift-fields" class="form-group" style="display:none;">
+          <label for="batch-shift-days">Nombre de jours à décaler :</label>
+          <input type="number" id="batch-shift-days" class="form-control" value="1" placeholder="+1, +2, -1">
+          <small style="color:var(--text-muted);">Exemple : +2 pour reporter de 2 jours, -1 pour avancer d'1 jour.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeBatchModal()" style="color:var(--text-main); background:#e2e8f0;">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="applyBatchDate()">Appliquer la Modification</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Édition / Modification d'un Client dans la Base -->
+  <div id="modal-edit-client" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-client-title">✏️ Modifier les données du Client</h3>
+        <button onclick="closeEditClientModal()" style="background:none; border:none; font-size:1.3rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-client-orig-id">
+        <input type="hidden" id="edit-client-orig-name">
+        <input type="hidden" id="edit-client-orig-phone">
+
+        <div class="form-group">
+          <label for="edit-client-name">Nom / Raison Sociale * :</label>
+          <input type="text" id="edit-client-name" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+          <label>Catégorie Fiscale * :</label>
+          <div class="category-toggle">
+            <button type="button" class="category-btn" id="btn-edit-cat-ent" onclick="setEditClientCategory('ENTREPRISE')">🏢 Entreprise</button>
+            <button type="button" class="category-btn" id="btn-edit-cat-phy" onclick="setEditClientCategory('PERSONNE_PHYSIQUE')">👤 Personne physique</button>
+          </div>
+          <input type="hidden" id="edit-client-category" value="ENTREPRISE">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-client-phone">Téléphone Mobile (SMS) * :</label>
+            <input type="tel" id="edit-client-phone" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-client-taxid">Matricule Fiscal :</label>
+            <input type="text" id="edit-client-taxid" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-client-email">Email :</label>
+            <input type="email" id="edit-client-email" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="edit-client-address">Adresse :</label>
+            <input type="text" id="edit-client-address" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-client-notes">Notes internes :</label>
+          <textarea id="edit-client-notes" class="form-control" rows="2" placeholder="Informations complémentaires..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeEditClientModal()" style="color:var(--text-main); background:#e2e8f0;">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveClientFromModal()">Enregistrer les Modifications</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Paramètres du Cabinet -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>⚙️ Paramètres ComptaPocket</h3>
+        <button onclick="closeSettingsModal()" style="background:none; border:none; font-size:1.3rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Option Automatisation -->
+        <div class="form-group" style="background:#e0f2fe; padding:0.75rem; border-radius:8px; display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; border-left:4px solid #0284c7;">
+          <div>
+            <strong style="color:#0369a1;">Automatiser l'envoi des SMS</strong><br>
+            <small style="color:#0369a1;">Envoie automatiquement les SMS aux dates fixées ci-dessous.</small>
+          </div>
+          <input type="checkbox" id="setting-auto-send" checked style="transform:scale(1.3); cursor:pointer;">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-cabinet-name">Nom du Bureau Comptable :</label>
+          <input type="text" id="setting-cabinet-name" class="form-control" placeholder="Bureau de Comptabilité">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-cabinet-phone">Téléphone de Contact :</label>
+          <input type="text" id="setting-cabinet-phone" class="form-control" placeholder="71000000">
+        </div>
+
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+        <strong style="font-size:0.9rem; color:var(--primary);">Échéances Fixes Légales :</strong>
+
+        <div class="form-row" style="margin-top:0.5rem;">
+          <div class="form-group">
+            <label for="setting-due-entreprise">Jour limite Sociétés :</label>
+            <input type="number" id="setting-due-entreprise" class="form-control" value="28">
+          </div>
+          <div class="form-group">
+            <label for="setting-due-physique">Jour limite Personnes :</label>
+            <input type="number" id="setting-due-physique" class="form-control" value="15">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="setting-due-cnss">Jour limite CNSS (Trimestrielle) :</label>
+            <input type="number" id="setting-due-cnss" class="form-control" value="15">
+          </div>
+          <div class="form-group">
+            <label for="setting-days-before">Rappel avant échéance (jours) :</label>
+            <input type="number" id="setting-days-before" class="form-control" value="3">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="setting-acomptes-entreprise">Jour Acomptes Sociétés :</label>
+            <input type="number" id="setting-acomptes-entreprise" class="form-control" value="28">
+          </div>
+          <div class="form-group">
+            <label for="setting-acomptes-physique">Jour Acomptes Personnes :</label>
+            <input type="number" id="setting-acomptes-physique" class="form-control" value="25">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:0.8rem;">
+          <button type="button" class="btn btn-secondary" onclick="realignAllClientsWithFixedSettings()" style="width:100%; border:1px solid #0d47a1; color:#0d47a1;">
+            🔄 Réaligner tous les clients sur ces dates
+          </button>
+        </div>
+
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+        <strong style="font-size:0.9rem; color:var(--primary);">💾 Sauvegarde & Restauration de la Base Clients :</strong>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;">Exportez tous vos clients et leurs échéances dans un fichier JSON ou restaurez une sauvegarde précédente.</p>
+        <div style="display:flex; gap:0.6rem; margin-top:0.6rem;">
+          <button type="button" class="btn btn-primary" onclick="exportDatabaseFile()" style="flex:1;">
+            💾 Sauvegarder la Base
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('file-restore-db').click()" style="flex:1; border:1px solid var(--border);">
+            📥 Restaurer la Base
+          </button>
+          <input type="file" id="file-restore-db" accept=".json" style="display:none;" onchange="importDatabaseFile(event)">
+        </div>
+
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+        <strong style="font-size:0.9rem; color:var(--primary);">ℹ️ À propos & Mises à jour :</strong>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;">Version 1.0.0 (Build 1) • Vérifiez les mises à jour et téléchargez l'APK officiel Android hébergé sur GitHub.</p>
+        <button type="button" class="btn btn-secondary" onclick="openAboutModal()" style="width:100%; margin-top:0.5rem; border:1px solid #0d47a1; color:#0d47a1;">
+          ℹ️ Ouvrir À propos & Vérifier les Mises à jour
+        </button>
+
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+        <strong style="font-size:0.9rem; color:var(--primary);">Modèles des SMS :</strong>
+
+        <div class="form-group" style="margin-top:0.5rem;">
+          <label for="setting-template-mensuelle">Modèle Déclaration Mensuelle :</label>
+          <textarea id="setting-template-mensuelle" class="form-control" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="setting-template-cnss">Modèle Cotisations CNSS :</label>
+          <textarea id="setting-template-cnss" class="form-control" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="setting-template-acomptes">Modèle Acomptes Provisionnels :</label>
+          <textarea id="setting-template-acomptes" class="form-control" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()" style="color:var(--text-main); background:#e2e8f0;">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveSettings()">Enregistrer les Réglages</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal À propos & Mises à jour -->
+  <div id="about-modal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div class="modal-content" style="max-width:480px; width:90%; background:white; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.2); text-align:center;">
+      <div class="modal-header" style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:1rem 1.25rem; display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0; font-size:1.1rem; color:#0f172a;">À propos de ComptaPocket SMS</h3>
+        <button class="modal-close" onclick="closeAboutModal()" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:#64748b;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:1.5rem 1.25rem;">
+        <img src="favicon.png" alt="Logo" style="width:72px; height:72px; border-radius:50%; margin-bottom:0.75rem; box-shadow:0 4px 10px rgba(0,0,0,0.15);">
+        <h2 style="font-size:1.3rem; margin:0.2rem 0; color:#0d47a1;">ComptaPocket SMS</h2>
+        <span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; padding:0.25rem 0.6rem; border-radius:20px; font-size:0.8rem;">
+          Version 1.0.0 (Build 1)
+        </span>
+        <p style="font-size:0.85rem; color:#64748b; margin:0.8rem 0; line-height:1.4;">
+          Solution d'automatisation des déclarations mensuelles (DM), cotisations CNSS et acomptes provisionnels (AP) pour cabinets de comptabilité et d'expertise comptable.
+        </p>
+
+        <div id="update-status-box" style="margin:1rem 0; padding:0.75rem; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; font-size:0.85rem;">
+          <div id="update-status-text">✅ Votre application est à jour.</div>
+          <button id="btn-check-update" class="btn btn-sm btn-secondary" onclick="checkGitHubUpdate()" style="margin-top:0.6rem; width:100%; border:1px solid #cbd5e1;">
+            🔄 Vérifier les mises à jour sur GitHub
+          </button>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:1rem;">
+          <a href="https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.0/ComptaPocket-SMS.apk" class="btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; padding:0.6rem;">
+            📥 Télécharger l'application Android (APK)
+          </a>
+          <a href="https://github.com/bkhmondocteur/comptapocket-sms" target="_blank" class="btn btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; border:1px solid #cbd5e1; padding:0.6rem;">
+            🌐 Consulter le projet GitHub
+          </a>
+        </div>
+      </div>
+      <div class="modal-footer" style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:0.75rem 1.25rem; text-align:center;">
+        <button type="button" class="btn btn-secondary" onclick="closeAboutModal()" style="min-width:120px; border:1px solid #cbd5e1;">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
