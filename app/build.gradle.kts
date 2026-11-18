@@ -16,8 +16,8 @@ android {
         applicationId = "com.comptapocket.sms"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -100,6 +100,9 @@ dependencies {
     // WorkManager (Kotlin + Coroutines)
     val work_version = "2.9.0"
     implementation("androidx.work:work-runtime-ktx:$work_version")
+
+    // DocumentFile for Storage Access Framework (SAF) backups
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

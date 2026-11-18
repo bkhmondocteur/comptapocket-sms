@@ -131,7 +131,16 @@ class SmsSender(private val context: Context) {
                         }
                     }
 
-                    // 2. Envoi SMS direct via SmsManager avec confirmation réseau
+                    // 2. Traitement SMS
+                    if (SimulationDateManager.isSimulationActive()) {
+                        Log.i(TAG, "Mode simulation actif: validation instantanée pour #${reminder.id} (${reminder.clientName})")
+                        onSmsSent(reminder.id)
+                        showToast("Simulation: SMS validé pour ${reminder.clientName}")
+                        notifySmsSent(reminder.clientName, reminder.telephone)
+                        continue
+                    }
+
+                    // Envoi SMS direct via SmsManager avec confirmation réseau
                     if (reminder.telephone.isNotBlank()) {
                         val cleanPhone = reminder.telephone.replace(Regex("[^0-9+]"), "")
                         if (cleanPhone.length >= 6) {

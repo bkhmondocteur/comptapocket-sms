@@ -1,8 +1,8 @@
 {
-  "versionCode": 7,
-  "versionName": "1.0.6",
+  "versionCode": 8,
+  "versionName": "1.0.7",
   "releaseDate": "2026-11-18",
-  "changelog": "- 🛑 Protection contre l'envoi d'échéances dépassées : lorsqu'un client est ajouté après la date d'échéance légale de 1 jour ou plus (today > dueDate), aucun SMS n'est envoyé pour cette échéance échue\n- 📅 Reprogrammation intelligente : pour tout client ajouté après l'échéance du mois en cours, l'application programme directement l'échéance du cycle/mois suivant sans envoyer de SMS inutile pour le passé\n- 🛡️ Verrou strict sur l'envoi automatique et les alarmes : blocage catégorique de l'envoi de SMS si la date légale de paiement est déjà révolue",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.6/ComptaPocket-SMS.apk",
+  "changelog": "- 📁 Choix du dossier de sauvegarde dès l'ouverture : invite au démarrage pour sélectionner votre dossier personnalisé de sauvegarde via le sélecteur Android (SAF)\n- 🔄 Sauvegarde automatique glissante (5 fichiers max) : sauvegarde automatique instantanée après chaque ajout, modification ou suppression d'un client. Le dossier conserve toujours les 5 dernières sauvegardes et la 6ème écrase automatiquement la plus ancienne\n- ⚙️ Gestion du dossier dans les Paramètres : affichage du dossier configuré et possibilité d'en changer à tout moment\n- 🧪 Simulation fiable des SMS : validation instantanée des envois de test en mode simulation sans dépendance d'antenne GSM réelle, évitant toute annulation intempestive du statut envoyé",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.7/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }

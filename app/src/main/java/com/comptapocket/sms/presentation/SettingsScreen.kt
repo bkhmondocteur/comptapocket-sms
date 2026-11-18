@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.comptapocket.sms.backup.BackupManager
 import com.comptapocket.sms.simulation.SimulationDateManager
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -99,6 +100,19 @@ fun SettingsScreen(
             } catch (e: Exception) {
                 Toast.makeText(context, "Erreur restauration: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    var backupFolderName by remember { mutableStateOf(BackupManager.getBackupFolderDisplayName(context)) }
+
+    val selectBackupFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val newName = BackupManager.saveBackupFolderUri(context, uri)
+            backupFolderName = newName
+            Toast.makeText(context, "Dossier de sauvegarde sélectionné : $newName", Toast.LENGTH_LONG).show()
+            viewModel?.triggerAutoBackup()
         }
     }
 
@@ -358,6 +372,34 @@ fun SettingsScreen(
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Restaurer", fontSize = 13.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Configuration du dossier de sauvegarde automatique glissante (5 fichiers)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("📁 Dossier des sauvegardes automatiques :", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(backupFolderName, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            OutlinedButton(
+                                onClick = { selectBackupFolderLauncher.launch(null) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Changer de dossier de sauvegarde", fontSize = 12.sp)
+                            }
+                            Text(
+                                "ℹ️ Sauvegarde automatique après chaque ajout, modification ou suppression d'un client. 5 sauvegardes sont conservées en continu (la 6ème écrase automatiquement la plus ancienne).",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }

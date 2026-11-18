@@ -30,6 +30,12 @@ class SmsSentReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val dao = AppDatabase.getDatabase(context.applicationContext).clientReminderDao()
+                if (com.comptapocket.sms.simulation.SimulationDateManager.isSimulationActive()) {
+                    Log.i(TAG, "Mode simulation actif : conservation du statut envoyé pour Rappel #$reminderId")
+                    dao.markSmsAsSent(reminderId)
+                    return@launch
+                }
+
                 if (resultCode == Activity.RESULT_OK) {
                     Log.i(TAG, "SUCCÈS RÉSEAU : SMS transmis à l'antenne opérateur pour Rappel #$reminderId")
                     dao.markSmsAsSent(reminderId)

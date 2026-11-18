@@ -4,6 +4,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.comptapocket.sms.R
+import com.comptapocket.sms.backup.BackupManager
 import com.comptapocket.sms.data.local.ClientCategory
 import com.comptapocket.sms.data.local.ClientEntity
 import com.comptapocket.sms.data.local.ClientReminderEntity
@@ -63,6 +66,25 @@ fun HomeScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSimulationDialog by remember { mutableStateOf(false) }
     var autoUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    // Invite au choix du dossier de sauvegarde dès l'ouverture de la mise à jour
+    var showBackupFolderDialog by remember {
+        mutableStateOf(
+            !BackupManager.isBackupFolderConfigured(context) && !BackupManager.hasPromptBeenShown(context)
+        )
+    }
+
+    val backupFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val folderName = BackupManager.saveBackupFolderUri(context, uri)
+            Toast.makeText(context, "Dossier de sauvegarde sélectionné : $folderName", Toast.LENGTH_LONG).show()
+            viewModel.triggerAutoBackup()
+        } else {
+            BackupManager.markPromptAsShown(context)
+        }
+    }
 
     val simulatedCalendar by SimulationDateManager.simulatedDateFlow.collectAsState()
     val isSimulationActive = simulatedCalendar != null
@@ -107,9 +129,10 @@ fun HomeScreen(
         }
     }
 
-    // Statistics counts calculés sur le cycle actif
-    val entreprisesCount = clientCards.count { it.category == ClientCategory.ENTREPRISE }
-    val physiquesCount = clientCards.count { it.category == ClientCategory.PERSONNE_PHYSIQUE }
+    // Statistics counts calculés sur la base de données et le cycle actif
+    val allClientsList by viewModel.allClients.collectAsState()
+    val entreprisesCount = allClientsList.count { it.category == ClientCategory.ENTREPRISE }
+    val physiquesCount = allClientsList.count { it.category == ClientCategory.PERSONNE_PHYSIQUE }
     val pendingCount = activeReminders.count { !it.smsEnvoye }
     val sentCount = activeReminders.count { it.smsEnvoye }
 
@@ -649,6 +672,75 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { showSendConfirmDialog = false }) {
                     Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Dialogue de choix du dossier de sauvegarde dès l'ouverture de la mise à jour
+    if (showBackupFolderDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                BackupManager.markPromptAsShown(context)
+                showBackupFolderDialog = false
+            },
+            icon = {
+                Icon(
+                    Icons.Default.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text("📁 Dossier de Sauvegarde", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Bienvenue dans cette nouvelle mise à jour de ComptaPocket SMS !\n\nVeuillez choisir le dossier de votre choix pour y stocker vos sauvegardes automatiques.",
+                        fontSize = 14.sp
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "🔄 Sauvegarde glissante automatique :",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "L'application effectue une sauvegarde automatique après chaque ajout, modification ou suppression d'un client. Le dossier contiendra au maximum 5 sauvegardes, et la 6ème sauvegarde écrasera automatiquement la plus ancienne.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBackupFolderDialog = false
+                        BackupManager.markPromptAsShown(context)
+                        backupFolderLauncher.launch(null)
+                    }
+                ) {
+                    Text("Choisir un dossier")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        BackupManager.markPromptAsShown(context)
+                        showBackupFolderDialog = false
+                    }
+                ) {
+                    Text("Plus tard")
                 }
             }
         )
