@@ -64,7 +64,6 @@ fun HomeScreen(
     var editingReminder by remember { mutableStateOf<ClientReminderEntity?>(null) }
     var showBatchDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
-    var showSimulationDialog by remember { mutableStateOf(false) }
     var autoUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
 
     // Invite au choix du dossier de sauvegarde dès l'ouverture de la mise à jour
@@ -85,9 +84,6 @@ fun HomeScreen(
             BackupManager.markPromptAsShown(context)
         }
     }
-
-    val simulatedCalendar by SimulationDateManager.simulatedDateFlow.collectAsState()
-    val isSimulationActive = simulatedCalendar != null
 
     // Vérification automatique des mises à jour sur GitHub au démarrage
     LaunchedEffect(Unit) {
@@ -140,17 +136,32 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Image(
                             painter = painterResource(id = R.drawable.app_logo),
                             contentDescription = "Logo ComptaPocket SMS",
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                         )
                         Column {
-                            Text("ComptaPocket SMS", fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                            Text(cabinetName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = "ComptaPocket SMS",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = cabinetName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 },
@@ -201,60 +212,6 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Bandeau Mode Simulation de Date (pour tests des échéances DM, CNSS, AP)
-            Surface(
-                color = if (isSimulationActive) Color(0xFFFFF3E0) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .clickable { showSimulationDialog = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isSimulationActive) "🧪" else "📅",
-                            fontSize = 18.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = if (isSimulationActive) "Simulation : ${SimulationDateManager.getTodayDisplayFormatted()}" else "Date du jour : ${SimulationDateManager.getTodayDisplayFormatted()}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSimulationActive) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (isSimulationActive) "Simulation active • Toucher pour changer ou réinitialiser" else "Mode test • Toucher pour simuler une date",
-                                fontSize = 10.sp,
-                                color = if (isSimulationActive) Color(0xFFBF360C) else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    if (isSimulationActive) {
-                        TextButton(
-                            onClick = { SimulationDateManager.resetToRealDate() },
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text("Réinitialiser", fontSize = 11.sp, color = Color(0xFFE65100), fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = { showSimulationDialog = true },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp)
-                        ) {
-                            Text("Simuler date", fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-
             // Dashboard des statistiques en résumé (Entreprises, Personnes physiques, En attente, Envoyés)
             Card(
                 modifier = Modifier
@@ -744,11 +701,6 @@ fun HomeScreen(
                 }
             }
         )
-    }
-
-    // Dialogue Mode Simulation de Date (pour les tests)
-    if (showSimulationDialog) {
-        SimulationDateDialog(onDismiss = { showSimulationDialog = false })
     }
 
     // Dialogue À propos & Mises à jour

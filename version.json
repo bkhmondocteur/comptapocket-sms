@@ -1,8 +1,8 @@
 {
-  "versionCode": 8,
-  "versionName": "1.0.7",
-  "releaseDate": "2026-11-18",
-  "changelog": "- 📁 Choix du dossier de sauvegarde dès l'ouverture : invite au démarrage pour sélectionner votre dossier personnalisé de sauvegarde via le sélecteur Android (SAF)\n- 🔄 Sauvegarde automatique glissante (5 fichiers max) : sauvegarde automatique instantanée après chaque ajout, modification ou suppression d'un client. Le dossier conserve toujours les 5 dernières sauvegardes et la 6ème écrase automatiquement la plus ancienne\n- ⚙️ Gestion du dossier dans les Paramètres : affichage du dossier configuré et possibilité d'en changer à tout moment\n- 🧪 Simulation fiable des SMS : validation instantanée des envois de test en mode simulation sans dépendance d'antenne GSM réelle, évitant toute annulation intempestive du statut envoyé",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.7/ComptaPocket-SMS.apk",
+  "versionCode": 9,
+  "versionName": "1.0.8",
+  "releaseDate": "2026-11-19",
+  "changelog": "- 🚀 Passage en production réelle : suppression définitive du simulateur de date et du bandeau de test\n- ⏱️ Synchronisation stricte et temps réel avec l'horloge Android de l'appareil\n- 📱 Optimisation de la barre supérieure (titre compact, ergonomie et fluidité)",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.8/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }

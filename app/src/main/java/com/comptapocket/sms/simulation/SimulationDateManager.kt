@@ -29,34 +29,21 @@ object SimulationDateManager {
     fun init(context: Context) {
         if (prefs == null) {
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val isActive = prefs?.getBoolean(KEY_IS_SIMULATION_ACTIVE, false) ?: false
-            val savedMillis = prefs?.getLong(KEY_SIMULATED_MILLIS, 0L) ?: 0L
-
-            if (isActive && savedMillis > 0L) {
-                val cal = Calendar.getInstance().apply { timeInMillis = savedMillis }
-                _simulatedDateFlow.value = cal
-            } else {
-                _simulatedDateFlow.value = null
-            }
         }
+        // Purge et désactivation définitive de tout mode simulation pour passage en production
+        prefs?.edit()?.clear()?.apply()
+        _simulatedDateFlow.value = null
     }
 
     /**
-     * Retourne une instance de Calendar représentant "Aujourd'hui".
-     * Si la simulation est active, retourne la date simulée.
-     * Sinon, retourne l'horloge réelle du système.
+     * Retourne toujours l'horloge réelle du système (production).
      */
     fun getTodayCalendar(): Calendar {
-        val sim = _simulatedDateFlow.value
-        return if (sim != null) {
-            (sim.clone() as Calendar)
-        } else {
-            Calendar.getInstance()
-        }
+        return Calendar.getInstance()
     }
 
     fun isSimulationActive(): Boolean {
-        return _simulatedDateFlow.value != null
+        return false
     }
 
     fun getTodayDateFormatted(): String {
