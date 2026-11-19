@@ -34,8 +34,14 @@ interface ClientReminderDao {
     @Query("SELECT * FROM ClientReminders")
     suspend fun getAllRemindersList(): List<ClientReminderEntity>
 
-    @Query("SELECT * FROM ClientReminders WHERE TRIM(LOWER(clientName)) = TRIM(LOWER(:clientName)) AND reminderType = :type AND dueDate LIKE :yearMonthPattern LIMIT 1")
-    suspend fun getReminderByClientTypeAndMonth(clientName: String, type: String, yearMonthPattern: String): ClientReminderEntity?
+    @Query("SELECT * FROM ClientReminders WHERE ((:clientName != '' AND TRIM(LOWER(clientName)) = TRIM(LOWER(:clientName))) OR (:clientName = '' AND telephone = :telephone)) AND category = :category AND reminderType = :type AND dueDate LIKE :yearMonthPattern LIMIT 1")
+    suspend fun getReminderByClientTypeAndMonth(
+        clientName: String,
+        telephone: String,
+        category: String,
+        type: String,
+        yearMonthPattern: String
+    ): ClientReminderEntity?
 
     @Query("SELECT * FROM Clients WHERE TRIM(LOWER(clientName)) = TRIM(LOWER(:name)) AND category = :category LIMIT 1")
     suspend fun getClientByNameAndCategory(name: String, category: String): ClientEntity?
@@ -50,10 +56,11 @@ interface ClientReminderDao {
     suspend fun getClientByName(name: String): ClientEntity?
 
     // Mettre à jour en cascade les coordonnées dans les rappels lorsqu'un client est modifié
-    @Query("UPDATE ClientReminders SET clientName = :newName, category = :newCategory, telephone = :newPhone, email = :newEmail, taxId = :newTaxId WHERE telephone = :oldPhone OR clientName = :oldName")
+    @Query("UPDATE ClientReminders SET clientName = :newName, category = :newCategory, telephone = :newPhone, email = :newEmail, taxId = :newTaxId WHERE ((:oldName != '' AND TRIM(LOWER(clientName)) = TRIM(LOWER(:oldName))) OR (:oldName = '' AND telephone = :oldPhone)) AND category = :oldCategory")
     suspend fun updateRemindersForClient(
         oldName: String,
         oldPhone: String,
+        oldCategory: String,
         newName: String,
         newCategory: String,
         newPhone: String,
@@ -62,8 +69,8 @@ interface ClientReminderDao {
     )
 
     // Supprimer tous les rappels d'un client
-    @Query("DELETE FROM ClientReminders WHERE clientName = :name OR telephone = :phone")
-    suspend fun deleteRemindersForClient(name: String, phone: String)
+    @Query("DELETE FROM ClientReminders WHERE ((:name != '' AND TRIM(LOWER(clientName)) = TRIM(LOWER(:name))) OR (:name = '' AND telephone = :phone)) AND category = :category")
+    suspend fun deleteRemindersForClient(name: String, phone: String, category: String)
 
 
     // ==========================================
@@ -93,8 +100,8 @@ interface ClientReminderDao {
     @Query("SELECT * FROM ClientReminders WHERE category = :category ORDER BY sendDate ASC, sendTime ASC, clientName ASC")
     fun getRemindersByCategory(category: String): Flow<List<ClientReminderEntity>>
 
-    @Query("SELECT * FROM ClientReminders WHERE telephone = :phone OR clientName = :name ORDER BY dueDate ASC")
-    suspend fun getRemindersForClient(phone: String, name: String): List<ClientReminderEntity>
+    @Query("SELECT * FROM ClientReminders WHERE ((:name != '' AND TRIM(LOWER(clientName)) = TRIM(LOWER(:name))) OR (:name = '' AND telephone = :phone)) AND category = :category ORDER BY dueDate ASC")
+    suspend fun getRemindersForClient(phone: String, name: String, category: String): List<ClientReminderEntity>
 
     @Query("SELECT * FROM ClientReminders WHERE smsEnvoye = 0 ORDER BY sendDate ASC, sendTime ASC")
     suspend fun getUnsentReminders(): List<ClientReminderEntity>

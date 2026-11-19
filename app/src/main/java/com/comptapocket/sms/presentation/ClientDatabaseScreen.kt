@@ -184,8 +184,13 @@ fun ClientDatabaseScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(clients, key = { it.id }) { client ->
-                        val clientReminders = allReminders.filter {
-                            it.telephone == client.telephone || it.clientName.equals(client.clientName, ignoreCase = true)
+                        val clientReminders = allReminders.filter { rem ->
+                            if (rem.category != client.category) return@filter false
+                            if (client.clientName.isNotBlank() && rem.clientName.isNotBlank()) {
+                                rem.clientName.trim().equals(client.clientName.trim(), ignoreCase = true)
+                            } else {
+                                rem.telephone.trim() == client.telephone.trim()
+                            }
                         }
 
                         ClientDirectoryCard(
@@ -226,6 +231,7 @@ fun ClientDatabaseScreen(
                         id = editingClient!!.id,
                         oldName = editingClient!!.clientName,
                         oldPhone = editingClient!!.telephone,
+                        oldCategory = editingClient!!.category,
                         newName = name,
                         newCategory = category,
                         newPhone = phone,
@@ -325,7 +331,7 @@ fun ClientDirectoryCard(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = client.clientName,
+                            text = client.clientName.ifBlank { if (isEntreprise) "Société sans nom" else "Personne physique" },
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             maxLines = 1,

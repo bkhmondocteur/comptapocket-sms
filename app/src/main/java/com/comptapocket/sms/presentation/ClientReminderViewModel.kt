@@ -228,11 +228,18 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         _categoryFilter
     ) { clientsList, remindersList, query, catFilter ->
         val remindersByClient = remindersList.groupBy { item ->
-            "${item.clientName.trim().lowercase()}|${item.category}"
+            val cleanName = item.clientName.trim().lowercase()
+            val cleanPhone = item.telephone.trim()
+            val idKey = if (cleanName.isNotBlank()) cleanName else cleanPhone
+            "$idKey|${item.category}"
         }
 
         val allClientsCombined = clientsList.toMutableList()
-        val existingKeys = clientsList.map { "${it.clientName.trim().lowercase()}|${it.category}" }.toSet()
+        val existingKeys = clientsList.map {
+            val id = if (it.clientName.isNotBlank()) it.clientName.trim().lowercase() else it.telephone.trim()
+            "$id|${it.category}"
+        }.toSet()
+
         for ((key, rems) in remindersByClient) {
             if (key !in existingKeys && rems.isNotEmpty()) {
                 val first = rems.first()
@@ -260,7 +267,8 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
             matchesQuery && matchesCategory
         }.map { client ->
-            val clientKey = "${client.clientName.trim().lowercase()}|${client.category}"
+            val idKey = if (client.clientName.isNotBlank()) client.clientName.trim().lowercase() else client.telephone.trim()
+            val clientKey = "$idKey|${client.category}"
             val clientReminders = (remindersByClient[clientKey] ?: emptyList())
                 .sortedWith(compareBy({ it.dueDate }, { it.reminderType }))
 
@@ -389,6 +397,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         id: Int,
         oldName: String,
         oldPhone: String,
+        oldCategory: String,
         newName: String,
         newCategory: String,
         newPhone: String,
@@ -410,10 +419,11 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             )
             dao.updateClient(updated)
 
-            // Mettre à jour en cascade tous les rappels existants pour ce client
+            // Mettre à jour en cascade tous les rappels existants pour ce client dans sa catégorie
             dao.updateRemindersForClient(
                 oldName = oldName,
                 oldPhone = oldPhone,
+                oldCategory = oldCategory,
                 newName = newName.trim(),
                 newCategory = newCategory,
                 newPhone = newPhone.trim(),
@@ -422,7 +432,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
             )
 
             // Recalculer le texte des SMS pour les rappels non envoyés afin d'intégrer le nouveau nom/catégorie
-            val reminders = dao.getRemindersForClient(newPhone.trim(), newName.trim())
+            val reminders = dao.getRemindersForClient(newPhone.trim(), newName.trim(), newCategory)
             for (rem in reminders) {
                 if (!rem.smsEnvoye) {
                     val updatedText = generateSmsText(newName.trim(), newCategory, rem.reminderType, rem.dueDate, rem.language)
@@ -438,7 +448,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch(Dispatchers.IO) {
             dao.deleteClient(client.id)
             if (deleteReminders) {
-                dao.deleteRemindersForClient(client.clientName, client.telephone)
+                dao.deleteRemindersForClient(client.clientName, client.telephone, client.category)
             }
             triggerAutoBackup()
         }
@@ -446,7 +456,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
 
     suspend fun getRemindersForClient(client: ClientEntity): List<ClientReminderEntity> {
         return withContext(Dispatchers.IO) {
-            dao.getRemindersForClient(client.telephone, client.clientName)
+            dao.getRemindersForClient(client.telephone, client.clientName, client.category)
         }
     }
 
@@ -818,7 +828,8 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 val seenReminders = mutableSetOf<String>()
                 for (r in allCurrentReminders) {
                     val monthKey = if (r.dueDate.length >= 7) r.dueDate.substring(0, 7) else r.dueDate
-                    val uniqueKey = "${r.clientName.trim().lowercase()}|${r.category}|${r.reminderType}|$monthKey"
+                    val idKey = if (r.clientName.isNotBlank()) r.clientName.trim().lowercase() else r.telephone.trim()
+                    val uniqueKey = "$idKey|${r.category}|${r.reminderType}|$monthKey"
                     if (uniqueKey in seenReminders) {
                         dao.deleteReminder(r.id)
                     } else {
@@ -831,7 +842,8 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                 if (rawClients.isEmpty()) {
                     val allReminders = dao.getAllRemindersList()
                     val distinctClients = allReminders.distinctBy {
-                        "${it.clientName.trim().lowercase()}|${it.category}"
+                        val id = if (it.clientName.isNotBlank()) it.clientName.trim().lowercase() else it.telephone.trim()
+                        "$id|${it.category}"
                     }
                     for (r in distinctClients) {
                         if (r.clientName.isNotBlank() || r.telephone.isNotBlank()) {
@@ -849,9 +861,42 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     rawClients = dao.getAllClientsList()
                 }
 
+                // 1.bis Réconciliation et correction des incohérences de catégorie / date d'échéance
+                for (r in dao.getAllRemindersList()) {
+                    if (r.reminderType == ReminderType.DECLARATION_MENSUELLE) {
+                        val isDue28 = r.dueDate.endsWith("-28") || r.dueDate.endsWith("/28")
+                        val isDue15 = r.dueDate.endsWith("-15") || r.dueDate.endsWith("/15")
+
+                        if (isDue28 && r.category == ClientCategory.PERSONNE_PHYSIQUE) {
+                            val matchingEntreprise = rawClients.firstOrNull { it.category == ClientCategory.ENTREPRISE && it.telephone == r.telephone }
+                            if (matchingEntreprise != null) {
+                                dao.updateReminder(r.copy(
+                                    category = ClientCategory.ENTREPRISE,
+                                    clientName = if (r.clientName.isBlank()) matchingEntreprise.clientName else r.clientName
+                                ))
+                            } else {
+                                val correctedDue = r.dueDate.substring(0, 8) + "15"
+                                dao.updateReminder(r.copy(dueDate = correctedDue))
+                            }
+                        } else if (isDue15 && r.category == ClientCategory.ENTREPRISE) {
+                            val matchingPhysique = rawClients.firstOrNull { it.category == ClientCategory.PERSONNE_PHYSIQUE && it.telephone == r.telephone }
+                            if (matchingPhysique != null) {
+                                dao.updateReminder(r.copy(
+                                    category = ClientCategory.PERSONNE_PHYSIQUE,
+                                    clientName = if (r.clientName.isBlank()) matchingPhysique.clientName else r.clientName
+                                ))
+                            } else {
+                                val correctedDue = r.dueDate.substring(0, 8) + "28"
+                                dao.updateReminder(r.copy(dueDate = correctedDue))
+                            }
+                        }
+                    }
+                }
+
                 // Déduplication stricte des clients pour ne jamais générer deux fois pour le même client
                 val clientsList = rawClients.distinctBy {
-                    "${it.clientName.trim().lowercase()}|${it.category}"
+                    val id = if (it.clientName.isNotBlank()) it.clientName.trim().lowercase() else it.telephone.trim()
+                    "$id|${it.category}"
                 }
 
                 if (clientsList.isEmpty()) return@withLock
@@ -884,7 +929,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                     val dmSendDateStr = format.format(dmSendCal.time)
 
                     val existingDm = dao.getReminderByClientTypeAndMonth(
-                        clientCleanName, ReminderType.DECLARATION_MENSUELLE, yearMonthPattern
+                        clientCleanName, clientCleanPhone, client.category, ReminderType.DECLARATION_MENSUELLE, yearMonthPattern
                     )
                     val todayDateStr = format.format(now.time)
                     if (existingDm == null) {
@@ -904,7 +949,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                             val nextDmSendDateStr = format.format(nextDmSendCal.time)
                             val nextPattern = String.format("%04d-%02d-%%", nextDmCal.get(Calendar.YEAR), nextDmCal.get(Calendar.MONTH) + 1)
                             val existingNextDm = dao.getReminderByClientTypeAndMonth(
-                                clientCleanName, ReminderType.DECLARATION_MENSUELLE, nextPattern
+                                clientCleanName, clientCleanPhone, client.category, ReminderType.DECLARATION_MENSUELLE, nextPattern
                             )
                             if (existingNextDm == null) {
                                 val text = generateSmsText(clientCleanName, client.category, ReminderType.DECLARATION_MENSUELLE, nextDmDueDateStr)
@@ -957,7 +1002,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         val cnssSendDateStr = format.format(cnssSendCal.time)
 
                         val existingCnss = dao.getReminderByClientTypeAndMonth(
-                            clientCleanName, ReminderType.CNSS, yearMonthPattern
+                            clientCleanName, clientCleanPhone, client.category, ReminderType.CNSS, yearMonthPattern
                         )
                         // Si le client est ajouté après la date d'échéance de la CNSS (ex: 16/01 pour échéance 15/01),
                         // ce n'est pas la peine d'envoyer un SMS pour cette échéance passée.
@@ -995,7 +1040,7 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
                         val apSendDateStr = format.format(apSendCal.time)
 
                         val existingAp = dao.getReminderByClientTypeAndMonth(
-                            clientCleanName, ReminderType.ACOMPTES_PROVISIONNELS, yearMonthPattern
+                            clientCleanName, clientCleanPhone, client.category, ReminderType.ACOMPTES_PROVISIONNELS, yearMonthPattern
                         )
                         // Si le client est ajouté après la date d'échéance de l'AP (ex: 26/12 pour échéance 25/12),
                         // ce n'est pas la peine d'envoyer un SMS pour cette échéance passée.
@@ -1186,16 +1231,32 @@ class ClientReminderViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun deleteRemindersForClient(clientName: String, telephone: String) {
+    fun deleteRemindersForClient(clientName: String, telephone: String, category: String = "") {
         viewModelScope.launch(Dispatchers.IO) {
-            val list = dao.getRemindersForClient(telephone, clientName)
+            val list = if (category.isNotBlank()) {
+                dao.getRemindersForClient(telephone, clientName, category)
+            } else {
+                dao.getAllRemindersList().filter {
+                    (it.telephone == telephone || it.clientName.equals(clientName, ignoreCase = true))
+                }
+            }
             for (r in list) {
                 SyncService.cancelAlarm(getApplication(), r.id)
             }
-            dao.deleteRemindersForClient(clientName, telephone)
-            val client = dao.getClientByPhone(telephone) ?: dao.getClientByName(clientName)
-            if (client != null) {
-                dao.deleteClient(client.id)
+            if (category.isNotBlank()) {
+                dao.deleteRemindersForClient(clientName, telephone, category)
+                val client = dao.getClientByNameAndCategory(clientName, category)
+                    ?: dao.getAllClientsList().firstOrNull { it.telephone == telephone && it.category == category }
+                if (client != null) {
+                    dao.deleteClient(client.id)
+                }
+            } else {
+                dao.deleteRemindersForClient(clientName, telephone, ClientCategory.PERSONNE_PHYSIQUE)
+                dao.deleteRemindersForClient(clientName, telephone, ClientCategory.ENTREPRISE)
+                val client = dao.getClientByPhone(telephone) ?: dao.getClientByName(clientName)
+                if (client != null) {
+                    dao.deleteClient(client.id)
+                }
             }
             triggerAutoBackup()
         }

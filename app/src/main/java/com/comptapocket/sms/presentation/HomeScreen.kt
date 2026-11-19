@@ -444,7 +444,7 @@ fun HomeScreen(
                                 showClientDialog = true
                             },
                             onDeleteClient = {
-                                viewModel.deleteRemindersForClient(clientCard.clientName, clientCard.telephone)
+                                viewModel.deleteRemindersForClient(clientCard.clientName, clientCard.telephone, clientCard.category)
                                 Toast.makeText(context, "Client ${clientCard.clientName} supprimé", Toast.LENGTH_SHORT).show()
                             },
                             onSendSingleSms = { reminder ->

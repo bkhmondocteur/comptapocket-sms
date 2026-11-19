@@ -1,8 +1,8 @@
 {
-  "versionCode": 9,
-  "versionName": "1.0.8",
+  "versionCode": 10,
+  "versionName": "1.0.9",
   "releaseDate": "2026-11-19",
-  "changelog": "- 🚀 Passage en production réelle : suppression définitive du simulateur de date et du bandeau de test\n- ⏱️ Synchronisation stricte et temps réel avec l'horloge Android de l'appareil\n- 📱 Optimisation de la barre supérieure (titre compact, ergonomie et fluidité)",
-  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.8/ComptaPocket-SMS.apk",
+  "changelog": "- 🎯 Séparation stricte des échéances par catégorie fiscale (15 pour Personne physique, 28 pour Entreprise)\n- 🔒 Cloisonnement total des rappels : les clients partageant un numéro de téléphone ne mélangent plus leurs cartes ni leurs déclarations\n- 🛠️ Réconciliation et nettoyage automatique de la base de données au démarrage\n- 👤 Affichage lisible des clients sans nom dans la base de données",
+  "downloadUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/download/v1.0.9/ComptaPocket-SMS.apk",
   "releaseUrl": "https://github.com/bkhmondocteur/comptapocket-sms/releases/latest"
 }
